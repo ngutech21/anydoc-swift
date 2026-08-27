@@ -45,4 +45,8 @@ unimplemented = "deny"
 anydoc = "=0.2.3"
 
 [profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
 panic = "unwind"
