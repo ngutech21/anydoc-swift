@@ -14,9 +14,11 @@
 
 ## Current state
 
-- The repository is at the bootstrap stage. The Swift package and Rust
-  `staticlib` crate compile, but the converter, C ABI, AnyDoc dependency,
-  fixtures, scripts, and XCFramework are not implemented yet.
+- The repository is at the native-integration stage. The Swift package and
+  Rust `staticlib` crate compile, and the crates.io-pinned AnyDoc dependency is
+  proven through real conversion fixtures. The C ABI, ownership model, and
+  safety behavior are implemented and tested. Build scripts, the XCFramework,
+  and the Swift public interface are not implemented yet.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
 - `Package.swift` intentionally has no binary target while the artifact is
@@ -57,9 +59,8 @@
 - Treat the upstream revision, Rust toolchain, `Cargo.lock`, snapshots,
   licenses, XCFramework, and checksum as one intentional upgrade unit. Do not
   change one incidentally.
-- A warm Cargo cache is not proof of offline operation. Verification intended
-  to be offline must also work with the repository's declared dependency
-  sources available from a clean environment.
+- Clean Rust builds resolve the locked dependency graph from crates.io. Tests
+  themselves must not access network resources at runtime.
 - Derive native libraries and Apple framework linker settings from the release
   artifact. Do not guess or rely on the developer machine's ambient state.
 - Consuming builds must never invoke Cargo or link against an unpackaged local

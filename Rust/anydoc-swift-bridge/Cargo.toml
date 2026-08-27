@@ -8,6 +8,8 @@ publish = false
 [lib]
 crate-type = ["staticlib"]
 
+[dependencies]
+anydoc = "=0.2.3"
+
 [profile.release]
 panic = "unwind"
-

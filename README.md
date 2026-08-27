@@ -4,9 +4,11 @@ AnyDocSwift is a macOS Swift package for converting supported document bytes
 to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
 
 The implementation contract and acceptance criteria live in
-[`docs/spec.md`](docs/spec.md). The repository is currently at the package
-bootstrap stage: the Swift library and test targets are usable, while the Rust
-bridge and verified XCFramework have not been implemented yet.
+[`docs/spec.md`](docs/spec.md). The repository is currently at the native
+integration stage: the Rust bridge pins AnyDoc to an exact crates.io release
+and proves real byte-to-Markdown conversion. Its C ABI and Rust-owned result
+lifetime are implemented and tested; the Swift public interface and verified
+XCFramework remain later milestones.
 
 ## Requirements
 

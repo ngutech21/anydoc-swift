@@ -20,11 +20,17 @@ The initial release targets macOS 13 or later on Apple Silicon.
 
 Pin AnyDoc to:
 
-- Version: `v0.2.3`
-- Commit: [`bf3d33e61731580d1ee1c6a85e56093d715a21a6`](https://github.com/firecrawl/anydoc/commit/bf3d33e61731580d1ee1c6a85e56093d715a21a6)
+- crates.io dependency: `anydoc = "=0.2.3"`
+- crates.io archive checksum:
+  `cba429594e94170aa99d2e4e0f596719ecc5c5df00269c671bc60c9e08172678`
+- Originating commit:
+  [`bf3d33e61731580d1ee1c6a85e56093d715a21a6`](https://github.com/firecrawl/anydoc/commit/bf3d33e61731580d1ee1c6a85e56093d715a21a6)
 - Minimum Rust toolchain: `1.88.0`
 
-Use the pinned source code—not the latest branch—as the implementation authority. Commit `Cargo.lock` and do not silently upgrade AnyDoc or its transitive dependencies.
+Use the immutable crates.io archive as the build source. Its
+`.cargo_vcs_info.json` records the originating commit above, which remains the
+implementation authority. Commit `Cargo.lock` and do not silently upgrade
+AnyDoc or its transitive dependencies.
 
 ## 3. Scope
 
@@ -282,7 +288,8 @@ void anydoc_swift_result_free(
 The Rust implementation must:
 
 - Use `crate-type = ["staticlib"]`.
-- Pin AnyDoc to the exact specified revision.
+- Pin AnyDoc to the exact specified crates.io release and verify its recorded
+  originating revision.
 - Use `#[unsafe(no_mangle)] extern "C"` exports appropriate for Rust 2024.
 - Validate every pointer and length before constructing a slice.
 - Decode the extension as UTF-8 without unchecked conversion.
@@ -374,7 +381,9 @@ Consuming applications must not invoke Cargo during resolution, build, or execut
 
 ## 11. Tests
 
-All tests must run offline and use committed fixtures with recorded provenance and hashes.
+Tests must use committed fixtures with recorded provenance and hashes and must
+not access network resources at runtime. Resolving the locked Cargo dependency
+graph on a clean machine may access crates.io.
 
 ### Rust tests
 
@@ -483,7 +492,6 @@ The work is complete only when:
 - Conversion does not block the main actor.
 - Every native allocation is released by Rust.
 - PDF and embedded-asset limitations are documented accurately.
-- All fixtures, builds, and tests operate without network access.
 - No speculative public abstractions or unfinished compatibility paths remain.
 - The exact AnyDoc revision, Cargo lockfile, XCFramework, checksum, notices, and verification results are present.
 
