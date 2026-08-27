@@ -1,5 +1,7 @@
 # AnyDocSwift
 
+[![CI](https://img.shields.io/github/actions/workflow/status/ngutech21/anydoc-swift/ci.yml?branch=master&event=push&label=CI)](https://github.com/ngutech21/anydoc-swift/actions/workflows/ci.yml)
+
 AnyDocSwift is a macOS Swift package for converting supported document bytes
 to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
 
