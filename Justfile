@@ -13,9 +13,30 @@ verified_xcframework := verify_root + "/AnyDocSwiftBridge.xcframework"
 verified_slice := verified_xcframework + "/macos-arm64"
 verified_library := verified_slice + "/libanydoc_swift_bridge.a"
 verified_headers := verified_slice + "/Headers"
+swift_scratch := root + "/.build/swift"
 
 default:
     @just --list
+
+# Check Rust formatting and lints with the pinned dependency graph.
+lint-rust:
+    cd "{{ crate }}" && cargo fmt --check
+    cd "{{ crate }}" && cargo clippy --locked --all-targets -- -D warnings
+
+# Build the Rust bridge package on the host platform.
+build-rust:
+    cd "{{ crate }}" && cargo build --locked --all-targets
+
+# Run the Rust bridge package tests.
+test-rust:
+    cd "{{ crate }}" && cargo test --locked
+
+# Run every Rust check used by continuous integration.
+ci-rust: lint-rust build-rust test-rust
+
+# Check Swift formatting without modifying sources.
+lint-swift:
+    xcrun swift format lint --strict --recursive Package.swift Sources Tests
 
 # Build and package the release XCFramework with the standard Cargo and Xcode tools.
 build-artifact:
@@ -50,3 +71,18 @@ verify-artifact archive=artifact_archive:
 
 # Build, package, and verify the native release artifact.
 artifact: build-artifact verify-artifact
+
+# Build the Swift package in debug and release configurations against the verified local bridge.
+build-swift: artifact
+    xcrun swift build --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+    xcrun swift build --scratch-path "{{ swift_scratch }}" -c release -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+
+# Test the Swift package against the verified local bridge.
+test-swift: artifact
+    xcrun swift test --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+
+# Run every Swift check used by continuous integration.
+ci-swift: lint-swift build-swift test-swift
+
+# Run all continuous-integration checks locally.
+ci: ci-rust ci-swift

@@ -483,6 +483,25 @@ swift test
 just artifact
 ```
 
+The repository exposes those checks through the same Justfile entrypoints used
+by continuous integration:
+
+```text
+just build-rust
+just test-rust
+just build-swift
+just test-swift
+just ci-rust
+just ci-swift
+just ci
+```
+
+`just ci-rust` performs Rust formatting, linting, building, and testing.
+`just ci-swift` performs strict Swift format linting, builds and verifies the
+local XCFramework, builds the Swift package in debug and release configurations,
+and runs its tests against that verified artifact. It must not modify
+`Package.swift` to inject a local binary target. `just ci` performs both suites.
+
 Also build and run the example consumer application on Apple Silicon without using a locally built Rust library.
 
 Run a repeated-conversion leak check against the release artifact and verify that result handles and returned buffers are not leaked.

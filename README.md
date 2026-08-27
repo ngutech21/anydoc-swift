@@ -48,8 +48,27 @@ conversion does not guarantee that every page was extracted.
 
 Until the binary target is published, plain `swift build` and `swift test` are
 expected to fail because `AnyDocSwiftBridge` is deliberately absent from
-`Package.swift`. Development validation supplies the verified local framework's
-headers and static library explicitly without committing a local binary target.
+`Package.swift`. The development recipes build and verify the local framework,
+then supply its headers and static library to SwiftPM explicitly without
+committing a local binary target.
+
+Run the same complete validation used by GitHub Actions with:
+
+```sh
+just ci
+```
+
+The Rust and Swift suites can run independently:
+
+```sh
+just ci-rust
+just ci-swift
+```
+
+Focused build and test entrypoints are also available as `just build-rust`,
+`just test-rust`, `just build-swift`, and `just test-swift`. The Swift build
+recipe covers debug and release configurations; the Swift test recipe runs
+against the same verified local XCFramework.
 
 Build and verify the ignored native release archive with:
 
