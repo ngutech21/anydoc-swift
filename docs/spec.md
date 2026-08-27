@@ -200,7 +200,10 @@ The input limit does not replace a caller-side file-size check before loading a 
 - Never perform parsing on `MainActor`.
 - Preserve FIFO execution within one `AnyDocConverter` instance.
 - Different converter instances may operate concurrently.
-- Check cancellation before enqueueing and after native conversion.
+- Check cancellation before enqueueing, when queued work begins, and after
+  native conversion.
+- If a task is cancelled while waiting on the serial queue, skip its native
+  call and throw `CancellationError`.
 - Once native conversion begins, cancellation cannot interrupt it. The native operation finishes, its allocation is released, and the Swift task then throws `CancellationError`.
 
 These semantics must be documented as part of the interface.
@@ -314,6 +317,11 @@ The Rust implementation must:
 - Remain stateless and avoid mutable global parser state.
 
 `engineVersion` should return a static value containing the AnyDoc version, exact revision, and bridge ABI version.
+The Swift adapter must validate ABI version `1` and strict UTF-8 before exposing
+that value. Because the public property is nonthrowing, an ABI mismatch, null or
+empty version buffer, or invalid UTF-8 returns the fixed string
+`AnyDoc engine version unavailable`. Conversion calls report the same integrity
+failures as `bridgeFailure`.
 
 ## 9. Package structure
 
@@ -437,7 +445,9 @@ Cover:
 - Native results freed on every success, failure, and cancellation path.
 - FIFO serialization.
 - Main-actor responsiveness using deterministic gates rather than timing sleeps.
-- Cancellation before dispatch and during an active native call.
+- Cancellation before dispatch, while queued, and during an active native call.
+- Engine-version fallback for ABI mismatch, missing data, and invalid native
+  UTF-8.
 
 ### Fixture coverage
 

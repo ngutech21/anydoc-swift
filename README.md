@@ -4,13 +4,10 @@ AnyDocSwift is a macOS Swift package for converting supported document bytes
 to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
 
 The implementation contract and acceptance criteria live in
-[`docs/spec.md`](docs/spec.md). The repository is currently at the native
-artifact stage: the Rust bridge pins AnyDoc to an exact crates.io release
-and proves real byte-to-Markdown conversion. Its C ABI and Rust-owned result
-lifetime are implemented and tested. The Justfile builds and verifies the
-release XCFramework locally using the standard Cargo, Xcode, and SwiftPM tools;
-publishing that archive, wiring the remote binary target, and implementing the
-Swift public interface remain later milestones.
+[`docs/spec.md`](docs/spec.md). The Rust bridge and Swift public interface are
+implemented and tested against a locally verified XCFramework. Publishing that
+archive and wiring its immutable URL and checksum into SwiftPM remain separate
+release steps, so the package is not yet consumable from an ordinary checkout.
 
 ## Requirements
 
@@ -20,12 +17,39 @@ Swift public interface remain later milestones.
 
 ## Development
 
-Open `Package.swift` directly in Xcode or use SwiftPM from the repository root:
+Once the immutable binary target is published and wired, conversion uses one
+actor with a small public interface:
 
-```sh
-swift build
-swift test
+```swift
+import AnyDocSwift
+
+let converter = AnyDocConverter()
+let markdown = try await converter.markdown(
+  from: documentData,
+  fileExtension: "docx"
+)
 ```
+
+Each converter runs native calls in FIFO order on its own serial queue; separate
+instances may run concurrently. Cancellation before native work starts skips
+the call. Once parsing begins, cleanup completes before `CancellationError` is
+thrown. The standard limits are 64 MiB of input and 16 MiB of UTF-8 Markdown.
+Failures use `AnyDocConversionError`; unknown future engine codes remain
+observable through `unrecognizedUpstream`.
+
+Supported hints are `doc`, `docx`, `docm`, `ppt`, `pps`, `pot`, `pptx`, `pptm`,
+`ppsx`, `ppsm`, `xls`, `xlsx`, `xlsm`, `xlsb`, `odt`, `ods`, `odp`, `rtf`,
+`epub`, `csv`, and `pdf`. Detection examines content first and uses the hint
+only as a fallback. CSV requires its extension hint.
+
+Text-based PDFs can be converted. Image-only and scanned PDFs require OCR and
+are unsupported. Mixed PDFs may omit pages that require OCR, and successful
+conversion does not guarantee that every page was extracted.
+
+Until the binary target is published, plain `swift build` and `swift test` are
+expected to fail because `AnyDocSwiftBridge` is deliberately absent from
+`Package.swift`. Development validation supplies the verified local framework's
+headers and static library explicitly without committing a local binary target.
 
 Build and verify the ignored native release archive with:
 
