@@ -1,0 +1,115 @@
+name: Release Swift Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without a leading v (for example, 0.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: release-swift-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and publish Swift package
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      RELEASE_TAG: ${{ inputs.version }}
+
+    steps:
+      - name: Validate release request
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "version must be MAJOR.MINOR.PATCH without a leading v" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Swift releases must run from master" >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Refuse an existing release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing_release_ids="$(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id"
+          )"
+          if [[ -n "$existing_release_ids" ]]; then
+            echo "release $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "tag $RELEASE_TAG already exists" >&2
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              exit "$status"
+            fi
+          fi
+
+      - name: Report pinned toolchains
+        run: |
+          test "$(uname -m)" = "arm64"
+          xcrun swift --version
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+
+      - name: Install just
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
+        with:
+          tool: just
+
+      - name: Run continuous integration checks
+        run: just ci
+
+      - name: Test the published binary dependency
+        run: |
+          xcrun swift package reset
+          xcrun swift build
+          xcrun swift build -c release
+          xcrun swift test
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "AnyDocSwift $RELEASE_TAG" \
+            --generate-notes \
+            --latest
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_sha="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              --jq '.object.sha'
+          )"
+          test "$tag_sha" = "$GITHUB_SHA"
+          test "$(
+            gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,isPrerelease,isImmutable \
+              --jq '.isDraft == false and .isPrerelease == false and .isImmutable == true'
+          )" = "true"
