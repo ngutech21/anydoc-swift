@@ -14,18 +14,21 @@
 
 ## Current state
 
-- The repository is at the native-integration stage. The Swift package and
-  Rust `staticlib` crate compile, and the crates.io-pinned AnyDoc dependency is
+- The repository is at the native-artifact stage. The Swift package and Rust
+  `staticlib` crate compile, and the crates.io-pinned AnyDoc dependency is
   proven through real conversion fixtures. The C ABI, ownership model, and
-  safety behavior are implemented and tested. Build scripts, the XCFramework,
-  and the Swift public interface are not implemented yet.
+  safety behavior are implemented and tested. The Justfile builds and verifies
+  the release XCFramework locally using Cargo, Xcode, and SwiftPM commands. The
+  remote release asset, SwiftPM binary-target integration, and Swift public
+  interface are not implemented yet.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` intentionally has no binary target while the artifact is
-  absent. Add the local binary target and its private Swift-target dependency
-  only when a real XCFramework has been built and verified.
-- Empty layout directories use `.gitkeep`. Remove those placeholders when
-  real files land, and update this section as implementation milestones change.
+- `Package.swift` intentionally has no binary target while the remote release
+  asset is absent. Add the checksum-pinned remote binary target and its private
+  Swift-target dependency only after the immutable archive has been published
+  and verified.
+- Empty layout directories use `.gitkeep`. Remove those placeholders when real
+  files land, and update this section as implementation milestones change.
 
 ## Design rules
 

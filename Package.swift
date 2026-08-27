@@ -14,8 +14,8 @@ let package = Package(
     )
   ],
   targets: [
-    // Add the local AnyDocSwiftBridge binary target and this target's
-    // dependency together once the first real XCFramework is verified.
+    // Add the remote AnyDocSwiftBridge binary target and this target's
+    // dependency together once its immutable release archive is verified.
     .target(name: "AnyDocSwift"),
     .testTarget(
       name: "AnyDocSwiftTests",

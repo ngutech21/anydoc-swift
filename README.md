@@ -5,10 +5,12 @@ to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
 
 The implementation contract and acceptance criteria live in
 [`docs/spec.md`](docs/spec.md). The repository is currently at the native
-integration stage: the Rust bridge pins AnyDoc to an exact crates.io release
+artifact stage: the Rust bridge pins AnyDoc to an exact crates.io release
 and proves real byte-to-Markdown conversion. Its C ABI and Rust-owned result
-lifetime are implemented and tested; the Swift public interface and verified
-XCFramework remain later milestones.
+lifetime are implemented and tested. The Justfile builds and verifies the
+release XCFramework locally using the standard Cargo, Xcode, and SwiftPM tools;
+publishing that archive, wiring the remote binary target, and implementing the
+Swift public interface remain later milestones.
 
 ## Requirements
 
@@ -25,5 +27,17 @@ swift build
 swift test
 ```
 
+Build and verify the ignored native release archive with:
+
+```sh
+just artifact
+```
+
+`just build-artifact` and `just verify-artifact` expose the two steps
+separately. The resulting archive is
+`.build/artifacts/AnyDocSwiftBridge.xcframework.zip`; SwiftPM prints its
+checksum after both commands.
+
 Consuming applications will not require Rust or Cargo once the release
-XCFramework is available.
+XCFramework has been published and added as a checksum-pinned remote binary
+target.

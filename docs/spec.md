@@ -337,16 +337,15 @@ Native/
   include/
     anydoc_swift_bridge.h
     module.modulemap
-Artifacts/
-  AnyDocSwiftBridge.xcframework
 Tests/
   AnyDocSwiftTests/
   Fixtures/
+  ArtifactSmoke/
+    main.c
+    main.swift
 Examples/
   ConsumerApp/
-Scripts/
-  build-xcframework.sh
-  verify-artifact.sh
+Justfile
 LICENSE
 THIRD_PARTY_NOTICES.md
 README.md
@@ -357,12 +356,14 @@ README.md
 - Use Swift tools version 6.1 or later.
 - Declare macOS 13 as the minimum platform.
 - Expose the `AnyDocSwift` library product.
-- Include the XCFramework as a local binary target.
+- Include the XCFramework as a checksum-pinned remote binary target after its
+  immutable release asset has been published and verified.
 - Keep the C module internal to the Swift implementation.
 
 ## 10. XCFramework build
 
-The build script must:
+The Justfile artifact recipes must compose the standard Cargo, Xcode, and
+SwiftPM commands to:
 
 1. Verify the expected Rust toolchain.
 2. Build with `cargo build --release --locked --target aarch64-apple-darwin`.
@@ -371,9 +372,26 @@ The build script must:
 5. Stage the header and module map.
 6. Create `AnyDocSwiftBridge.xcframework` with `xcodebuild -create-xcframework`.
 7. Verify that the artifact contains only the expected macOS arm64 slice.
-8. Record a SHA-256 checksum.
-9. Run a C-link smoke test against the packaged artifact.
-10. Run a Swift consumer build that has no dependency on Cargo.
+8. Package the XCFramework as a ZIP under the ignored `.build/artifacts`
+   directory.
+9. Record the ZIP's SwiftPM-compatible SHA-256 checksum.
+10. Run a C-link smoke test against the packaged artifact.
+11. Run a Swift consumer build that has no dependency on Cargo.
+
+The recipe interface is:
+
+```text
+just build-artifact
+just verify-artifact [archive]
+just artifact
+```
+
+`just artifact` performs both steps. The default archive is
+`.build/artifacts/AnyDocSwiftBridge.xcframework.zip`.
+
+Release archives are published outside Git under immutable `binary-<version>`
+GitHub release tags. Never replace an existing release archive in place; a
+native change requires a new bridge version, release URL, and checksum.
 
 Inspect the Rust build’s required native libraries and Apple frameworks. Declare any required linker settings explicitly in `Package.swift`; do not guess or rely on developer-machine environment state.
 
@@ -452,8 +470,7 @@ cargo test --locked
 swift build
 swift build -c release
 swift test
-Scripts/build-xcframework.sh
-Scripts/verify-artifact.sh
+just artifact
 ```
 
 Also build and run the example consumer application on Apple Silicon without using a locally built Rust library.
