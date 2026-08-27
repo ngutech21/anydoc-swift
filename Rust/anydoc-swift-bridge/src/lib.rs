@@ -1,6 +1,9 @@
-//! Handwritten C ABI bridge for AnyDocSwift.
+//! Handwritten C ABI bridge for `AnyDocSwift`.
 
-#![deny(unsafe_op_in_unsafe_fn)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::{ptr, slice, str};
@@ -464,7 +467,7 @@ mod tests {
             let mut length = usize::MAX;
             // SAFETY: `OwnedResult` keeps a live handle and `length` is
             // writable for the duration of the accessor call.
-            let pointer = unsafe { accessor(self.0, &mut length) };
+            let pointer = unsafe { accessor(self.0, &raw mut length) };
             if pointer.is_null() {
                 assert_eq!(length, 0);
                 return None;
@@ -524,7 +527,7 @@ mod tests {
 
         let mut length = 0;
         // SAFETY: `length` is writable for the accessor call.
-        let pointer = unsafe { anydoc_swift_engine_version(&mut length) };
+        let pointer = unsafe { anydoc_swift_engine_version(&raw mut length) };
         assert!(!pointer.is_null());
         // SAFETY: The engine version accessor returns a static buffer of the
         // reported length.
@@ -669,9 +672,9 @@ mod tests {
         let mut first_length = 0;
         let mut second_length = 0;
         // SAFETY: `success` owns a live result and both lengths are writable.
-        let first = unsafe { anydoc_swift_result_markdown(success.0, &mut first_length) };
+        let first = unsafe { anydoc_swift_result_markdown(success.0, &raw mut first_length) };
         // SAFETY: Same live result and writable output storage.
-        let second = unsafe { anydoc_swift_result_markdown(success.0, &mut second_length) };
+        let second = unsafe { anydoc_swift_result_markdown(success.0, &raw mut second_length) };
         assert_eq!(first, second);
         assert_eq!(first_length, second_length);
         assert_eq!(first_length, RTF_MARKDOWN.len());
@@ -687,9 +690,9 @@ mod tests {
             let mut second_length = 0;
             // SAFETY: `failure` owns a live result and both lengths are
             // writable for the duration of these calls.
-            let first = unsafe { accessor(failure.0, &mut first_length) };
+            let first = unsafe { accessor(failure.0, &raw mut first_length) };
             // SAFETY: Same live result and writable output storage.
-            let second = unsafe { accessor(failure.0, &mut second_length) };
+            let second = unsafe { accessor(failure.0, &raw mut second_length) };
             assert!(!first.is_null());
             assert_eq!(first, second);
             assert_eq!(first_length, second_length);
@@ -710,7 +713,7 @@ mod tests {
             let mut length = usize::MAX;
             // SAFETY: Null result handles are supported and `length` is
             // writable, so it must be reset to zero.
-            let pointer = unsafe { accessor(ptr::null(), &mut length) };
+            let pointer = unsafe { accessor(ptr::null(), &raw mut length) };
             assert!(pointer.is_null());
             assert_eq!(length, 0);
         }
@@ -730,6 +733,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::mem_forget,
+        reason = "the test transfers ownership to a raw handle and frees it through the C ABI"
+    )]
     fn rust_free_releases_a_live_result() {
         let result = OwnedResult::convert(Some(RTF_FIXTURE), None, u64::MAX, u64::MAX);
         let raw = result.0;
