@@ -18,15 +18,15 @@
   of the Swift public interface. The crates.io-pinned AnyDoc dependency is
   proven through real conversion fixtures; the C ABI, Swift adapter, ownership,
   scheduling, cancellation, and typed-error behavior are implemented and
-  tested against the local XCFramework. The remote release asset and SwiftPM
-  binary-target integration are not implemented, so ordinary root Swift builds
-  remain intentionally blocked until that immutable asset is published.
+  tested against the local XCFramework. The verified immutable release asset is
+  integrated as a checksum-pinned SwiftPM binary target, so ordinary root Swift
+  builds require neither Cargo nor a locally built Rust library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` intentionally has no binary target while the remote release
-  asset is absent. Add the checksum-pinned remote binary target and its private
-  Swift-target dependency only after the immutable archive has been published
-  and verified.
+- `Package.swift` pins the `binary-0.1.1` release archive and keeps its bridge
+  dependency private to the Swift implementation target. A native change must
+  publish and verify a new immutable archive before updating its URL and
+  checksum together.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 

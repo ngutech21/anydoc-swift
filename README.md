@@ -7,9 +7,9 @@ to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
 
 The implementation contract and acceptance criteria live in
 [`docs/spec.md`](docs/spec.md). The Rust bridge and Swift public interface are
-implemented and tested against a locally verified XCFramework. Publishing that
-archive and wiring its immutable URL and checksum into SwiftPM remain separate
-release steps, so the package is not yet consumable from an ordinary checkout.
+implemented and tested against a verified XCFramework. Its immutable release
+archive is integrated as a checksum-pinned SwiftPM binary target, so ordinary
+package consumers do not need a Rust toolchain.
 
 ## Requirements
 
@@ -19,8 +19,7 @@ release steps, so the package is not yet consumable from an ordinary checkout.
 
 ## Development
 
-Once the immutable binary target is published and wired, conversion uses one
-actor with a small public interface:
+Conversion uses one actor with a small public interface:
 
 ```swift
 import AnyDocSwift
@@ -48,11 +47,10 @@ Text-based PDFs can be converted. Image-only and scanned PDFs require OCR and
 are unsupported. Mixed PDFs may omit pages that require OCR, and successful
 conversion does not guarantee that every page was extracted.
 
-Until the binary target is published, plain `swift build` and `swift test` are
-expected to fail because `AnyDocSwiftBridge` is deliberately absent from
-`Package.swift`. The development recipes build and verify the local framework,
-then supply its headers and static library to SwiftPM explicitly without
-committing a local binary target.
+Plain `swift build` and `swift test` resolve the published, checksum-pinned
+`AnyDocSwiftBridge` artifact without invoking Cargo. The development recipes
+also build and verify the local framework before supplying its headers and
+static library to SwiftPM for source-level bridge validation.
 
 Run the same complete validation used by GitHub Actions with:
 
@@ -83,6 +81,5 @@ separately. The resulting archive is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`; SwiftPM prints its
 checksum after both commands.
 
-Consuming applications will not require Rust or Cargo once the release
-XCFramework has been published and added as a checksum-pinned remote binary
-target.
+Consuming applications do not require Rust or Cargo. SwiftPM downloads and
+verifies the released XCFramework through the package manifest.

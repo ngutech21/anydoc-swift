@@ -78,12 +78,12 @@ artifact: build-artifact verify-artifact
 
 # Build the Swift package in debug and release configurations against the verified local bridge.
 build-swift: artifact
-    xcrun swift build --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
-    xcrun swift build --scratch-path "{{ swift_scratch }}" -c release -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+    env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift build --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+    env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift build --scratch-path "{{ swift_scratch }}" -c release -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
 
 # Test the Swift package against the verified local bridge.
 test-swift: artifact
-    xcrun swift test --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
+    env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift test --scratch-path "{{ swift_scratch }}" -Xswiftc -I -Xswiftc "{{ verified_headers }}" -Xlinker "{{ verified_library }}" -Xlinker -framework -Xlinker CoreFoundation -Xlinker -liconv
 
 # Run every Swift check used by continuous integration.
 ci-swift: lint-swift build-swift test-swift

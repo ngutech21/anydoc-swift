@@ -2,6 +2,9 @@
 
 import PackageDescription
 
+let useLocallyBuiltBridge =
+  Context.environment["ANYDOC_SWIFT_USE_LOCAL_BRIDGE"] == "1"
+
 let package = Package(
   name: "AnyDocSwift",
   platforms: [
@@ -14,9 +17,20 @@ let package = Package(
     )
   ],
   targets: [
-    // Add the remote AnyDocSwiftBridge binary target and this target's
-    // dependency together once its immutable release archive is verified.
-    .target(name: "AnyDocSwift"),
+    .target(
+      name: "AnyDocSwift",
+      dependencies: useLocallyBuiltBridge ? [] : ["AnyDocSwiftBridge"],
+      linkerSettings: [
+        .linkedFramework("CoreFoundation"),
+        .linkedLibrary("iconv"),
+      ]
+    ),
+    .binaryTarget(
+      name: "AnyDocSwiftBridge",
+      url:
+        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.1/AnyDocSwiftBridge.xcframework.zip",
+      checksum: "7877370f0ffe12181cc9e7605698f34895cc195020d0fcb8e82fa4f1e970658b"
+    ),
     .testTarget(
       name: "AnyDocSwiftTests",
       dependencies: ["AnyDocSwift"]
