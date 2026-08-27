@@ -1,0 +1,10 @@
+.DS_Store
+/.build
+/Rust/anydoc-swift-bridge/target
+/Packages
+/*.xcodeproj
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
