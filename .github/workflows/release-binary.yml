@@ -1,0 +1,182 @@
+name: Release Binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without a leading v (for example, 0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-binary-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish binary
+    runs-on: macos-15
+    environment: binary-release
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      ARCHIVE_PATH: .build/artifacts/AnyDocSwiftBridge.xcframework.zip
+      ASSET_NAME: AnyDocSwiftBridge.xcframework.zip
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: binary-${{ inputs.version }}
+
+    steps:
+      - name: Validate release request
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "version must be MAJOR.MINOR.PATCH without a leading v" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "binary releases must run from master" >&2
+            exit 1
+          fi
+
+      - name: Verify immutable releases are enabled
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_SETTINGS_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "RELEASE_SETTINGS_TOKEN must have Administration: read for this repository" >&2
+            exit 1
+          fi
+          if ! immutable="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/immutable-releases" \
+              --jq '.enabled'
+          )"; then
+            echo "repository release immutability is not enabled or could not be verified" >&2
+            exit 1
+          fi
+          test "$immutable" = "true"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Refuse an existing release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "tag $RELEASE_TAG already exists" >&2
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              exit "$status"
+            fi
+          fi
+
+      - name: Report pinned toolchains
+        run: |
+          test "$(uname -m)" = "arm64"
+          xcrun swift --version
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+
+      - name: Install just
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just
+
+      - name: Build and verify release artifact
+        id: artifact
+        run: |
+          just artifact
+          test -f "$ARCHIVE_PATH"
+          checksum="$(swift package compute-checksum "$ARCHIVE_PATH")"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SWIFTPM_CHECKSUM: ${{ steps.artifact.outputs.checksum }}
+        run: |
+          gh release create "$RELEASE_TAG" "$ARCHIVE_PATH" \
+            --draft \
+            --latest=false \
+            --notes "SwiftPM checksum (SHA-256): $SWIFTPM_CHECKSUM" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TAG"
+
+      - name: Verify draft release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_type="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              --jq '.object.type'
+          )"
+          tag_sha="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              --jq '.object.sha'
+          )"
+          test "$tag_type" = "commit"
+          test "$tag_sha" = "$GITHUB_SHA"
+          test "$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+              --jq '.draft'
+          )" = "true"
+
+      - name: Download and verify draft asset
+        env:
+          EXPECTED_CHECKSUM: ${{ steps.artifact.outputs.checksum }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          download_directory="$RUNNER_TEMP/release-download"
+          mkdir -p "$download_directory"
+          gh release download "$RELEASE_TAG" \
+            --dir "$download_directory" \
+            --pattern "$ASSET_NAME"
+          downloaded_archive="$download_directory/$ASSET_NAME"
+          cmp "$ARCHIVE_PATH" "$downloaded_archive"
+          actual_checksum="$(swift package compute-checksum "$downloaded_archive")"
+          test "$actual_checksum" = "$EXPECTED_CHECKSUM"
+          just verify-artifact "$downloaded_archive"
+
+      - name: Publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "$RELEASE_TAG" \
+            --draft=false \
+            --latest=false \
+            --verify-tag
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+              --jq '.draft == false and .immutable == true'
+          )" = "true"
