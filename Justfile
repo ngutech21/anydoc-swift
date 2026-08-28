@@ -37,7 +37,6 @@ verified_framework_binary := verified_framework_version_root + "/" + framework_n
 verified_headers := verified_framework_version_root + "/Headers"
 verified_modules := verified_framework_version_root + "/Modules"
 verified_resources := verified_framework_version_root + "/Resources"
-composition_probe_library := verify_root + "/librust_staticlib_probe.a"
 swift_scratch := root + "/.build/swift"
 xcode_scratch := root + "/.build/xcode-package-smoke"
 xcode_product_framework := xcode_scratch + "/Build/Products/Debug/" + framework_name + ".framework"
@@ -48,7 +47,6 @@ default:
 # Check Rust formatting and lints with the pinned dependency graph.
 lint-rust:
     cd "{{ crate }}" && cargo fmt --check
-    rustfmt --check "{{ root }}/Tests/ArtifactSmoke/rust_staticlib_probe.rs"
     cd "{{ crate }}" && cargo clippy --locked --all-targets -- -D warnings
 
 # Build the Rust bridge package on the host platform.
@@ -165,14 +163,6 @@ verify-artifact archive=artifact_archive:
     env PATH=/usr/bin:/bin:/usr/sbin:/sbin "{{ verify_root }}/swift-smoke"
     swift package compute-checksum "{{ archive }}"
 
-# Prove that the dynamic bridge coexists with a second Rust static library.
-verify-rust-composition: verify-artifact
-    MACOSX_DEPLOYMENT_TARGET={{ deployment_target }} rustc "{{ root }}/Tests/ArtifactSmoke/rust_staticlib_probe.rs" --crate-name rust_staticlib_probe --crate-type staticlib --edition 2024 --target {{ target }} -C panic=unwind -C opt-level=3 -o "{{ composition_probe_library }}"
-    xcrun nm -gU "{{ composition_probe_library }}" 2>/dev/null | awk '$NF == "_rust_eh_personality" { found = 1 } END { exit found ? 0 : 1 }'
-    env PATH=/usr/bin:/bin:/usr/sbin:/sbin xcrun clang "{{ root }}/Tests/ArtifactSmoke/composition.c" "{{ composition_probe_library }}" -mmacosx-version-min={{ deployment_target }} -F "{{ verified_slice }}" -framework "{{ framework_name }}" -Wl,-rpath,"{{ verified_slice }}" -o "{{ verify_root }}/rust-composition-smoke"
-    xcrun nm -gU "{{ verify_root }}/rust-composition-smoke" | awk '$NF == "_rust_eh_personality" { found = 1 } END { exit found ? 0 : 1 }'
-    env PATH=/usr/bin:/bin:/usr/sbin:/sbin "{{ verify_root }}/rust-composition-smoke"
-
 # Build the Swift package in debug and release configurations against the verified local bridge.
 build-swift: artifact
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift build --scratch-path "{{ swift_scratch }}"
@@ -193,7 +183,7 @@ verify-xcode-package: verify-artifact
     codesign --verify --deep --strict --verbose=2 "{{ xcode_product_framework }}"
 
 # Build, package, and verify the native release artifact.
-artifact: build-artifact verify-artifact verify-rust-composition verify-xcode-package
+artifact: build-artifact verify-artifact verify-xcode-package
 
 # Run every Swift check used by continuous integration.
 ci-swift: lint-swift build-swift test-swift

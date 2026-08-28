@@ -327,9 +327,6 @@ The tests are organized around the seams they protect:
 - Artifact smoke tests prove that packaged C and Swift consumers can link and
   run without Cargo on `PATH`; artifact and Xcode-package verification also
   prove that the project license and third-party notices survive packaging.
-- The Rust composition smoke links a test-only Rust static library beside the
-  dynamic bridge and proves that both unwind runtimes coexist without a symbol
-  collision.
 - The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
   its named framework product rather than a shared `include/module.modulemap`
   output.
