@@ -1,0 +1,8 @@
+_anydoc_swift_abi_version
+_anydoc_swift_convert_markdown
+_anydoc_swift_engine_version
+_anydoc_swift_result_error_code
+_anydoc_swift_result_error_message
+_anydoc_swift_result_free
+_anydoc_swift_result_is_success
+_anydoc_swift_result_markdown

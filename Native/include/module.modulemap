@@ -1,4 +1,0 @@
-module AnyDocSwiftBridge {
-  header "anydoc_swift_bridge.h"
-  export *
-}

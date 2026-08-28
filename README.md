@@ -94,8 +94,8 @@ conversion does not guarantee that every page was extracted.
 
 Plain `swift build` and `swift test` resolve the published, checksum-pinned
 `AnyDocSwiftBridge` artifact without invoking Cargo. The development recipes
-also build and verify the local framework before supplying its headers and
-static library to SwiftPM for source-level bridge validation.
+also build and verify the local dynamic framework before selecting that
+XCFramework through the same private SwiftPM binary-target seam.
 
 Run the same complete validation used by GitHub Actions with:
 
@@ -124,7 +124,9 @@ just artifact
 `just build-artifact` and `just verify-artifact` expose the two steps
 separately. The resulting archive is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`; SwiftPM prints its
-checksum after both commands.
+checksum after both commands. Artifact validation also links a test-only second
+Rust static library to prove that both Rust runtimes can coexist in one
+consumer process.
 
 Consuming applications do not require Rust or Cargo. SwiftPM downloads and
 verifies the released XCFramework through the package manifest.

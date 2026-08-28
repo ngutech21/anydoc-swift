@@ -23,7 +23,7 @@ AnyDocCAdapter (private Swift adapter)
   |
   | length-delimited buffers through ABI version 1
   v
-AnyDocSwiftBridge (packaged C module and Rust static library)
+AnyDocSwiftBridge (dynamic framework with a private Rust runtime)
   |
   | content detection and conversion
   v
@@ -49,7 +49,8 @@ Conversion itself is local and in-process. It does not make network requests.
 | --- | --- |
 | [`Package.swift`](../Package.swift) | Declares the public Swift library, private binary dependency, supported platform, and native linker settings. |
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Contains the public actor and error type plus the private Swift-to-C adapter. |
-| [`Native/include/`](../Native/include/) | Defines the versioned C ABI and Clang module used by Swift. |
+| [`Native/include/`](../Native/include/) | Defines the versioned C ABI header used by Swift. |
+| [`Native/framework/`](../Native/framework/) | Defines the framework module, bundle metadata, and exact exported-symbol list. |
 | [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Implements the C ABI, owns native result memory, and calls the pinned AnyDoc engine. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, concurrency, cancellation, error mapping, ABI validation, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded documents used for real conversions. |
@@ -247,17 +248,24 @@ SwiftPM downloads and verifies that archive for ordinary `swift build` and
 For native development, `just artifact` performs the reproducible path:
 
 1. build the Rust `staticlib` for `aarch64-apple-darwin` with the pinned Rust
-   toolchain and macOS 13 deployment target;
-2. combine the library, C header, and module map into an XCFramework;
-3. package the framework as a ZIP and compute its SwiftPM checksum; and
+   toolchain and macOS 13 deployment target as an internal intermediate;
+2. use Cargo's reported native link requirements to link that archive into a
+   versioned, non-mergeable dynamic framework with a controlled `@rpath`
+   install name and exactly eight exported C symbols;
+3. package the framework as an XCFramework ZIP and compute its SwiftPM
+   checksum; and
 4. reopen and validate the package, including its platform, architecture,
-   headers, exported ABI, and C and Swift smoke consumers.
+   Mach-O type, install name, dependencies, bundle structure, signature,
+   exported ABI, and C and Swift smoke consumers.
 
 The ignored output is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`. The local Swift recipes
-set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` and provide the verified framework's
-headers and library explicitly; that switch is for repository validation, not
-for package consumers.
+set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`, which selects the verified local
+XCFramework through the same private binary-target seam used by the remote
+release; that switch is for repository validation, not for package consumers.
+In this mode the bridge owns its `CoreFoundation` and `iconv` dependencies. The
+manifest retains those linker settings only for the currently published static
+artifact until its pin advances to the new dynamic binary release.
 
 Native releases and Swift package releases are intentionally separate:
 
@@ -301,6 +309,12 @@ The tests are organized around the seams they protect:
   concurrency, main-actor responsiveness, and cancellation at each stage.
 - Artifact smoke tests prove that packaged C and Swift consumers can link and
   run without Cargo on `PATH`.
+- The Rust composition smoke links a test-only Rust static library beside the
+  dynamic bridge and proves that both unwind runtimes coexist without a symbol
+  collision.
+- The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
+  its named framework product rather than a shared `include/module.modulemap`
+  output.
 - Real RTF and CSV fixtures exercise the pinned AnyDoc engine. Their provenance
   and hashes are recorded in [`Tests/Fixtures/README.md`](../Tests/Fixtures/README.md).
 

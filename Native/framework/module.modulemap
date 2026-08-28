@@ -1,0 +1,4 @@
+framework module AnyDocSwiftBridge {
+  umbrella header "anydoc_swift_bridge.h"
+  export *
+}

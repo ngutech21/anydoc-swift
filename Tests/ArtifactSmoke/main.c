@@ -1,4 +1,4 @@
-#include "anydoc_swift_bridge.h"
+#include <AnyDocSwiftBridge/anydoc_swift_bridge.h>
 
 #include <stddef.h>
 #include <stdint.h>
