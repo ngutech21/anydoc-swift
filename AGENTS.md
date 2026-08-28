@@ -3,11 +3,11 @@
 ## Authority
 
 - These instructions apply to the whole repository.
-- [`docs/spec.md`](docs/spec.md) is the source of truth for product scope,
-  public behavior, ABI, layout, tests, documentation, and acceptance. Read the
-  relevant section before changing code; do not duplicate those requirements
-  here.
-- If the specification, pinned upstream source, or implementation conflict,
+- [`docs/spec.md`](docs/spec.md) explains the current architecture, runtime
+  behavior, repository layout, and release flow. Read the relevant section
+  before changing code and verify exact contracts against the implementation
+  and tests; do not duplicate that guide here.
+- If the overview, pinned upstream source, implementation, or tests conflict,
   stop and surface the conflict. Do not guess, silently weaken a requirement,
   or use the latest upstream branch as authority.
 - Keep changes narrow and preserve unrelated worktree changes.
@@ -23,7 +23,7 @@
   builds require neither Cargo nor a locally built Rust library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` pins the `binary-0.1.1` release archive and keeps its bridge
+- `Package.swift` pins the `binary-0.1.2` release archive and keeps its bridge
   dependency private to the Swift implementation target. A native change must
   publish and verify a new immutable archive before updating its URL and
   checksum together.
@@ -32,13 +32,13 @@
 
 ## Design rules
 
-- Implement one deep module behind the exact public interface in section 5 of
-  the specification. Do not add public protocols, factories, registries,
+- Implement one deep module behind the public interface in
+  `Sources/AnyDocSwift`. Do not add public protocols, factories, registries,
   format-specific converters, or native types.
 - Keep the Swift-to-C adapter private. C and Rust declarations must not appear
   in the generated Swift interface.
 - Put behavior at the seam that owns it. Follow the responsibility split in
-  sections 4, 6, and 8 instead of spreading normalization, scheduling, error
+  the overview instead of spreading normalization, scheduling, error
   translation, detection, or ownership rules across layers.
 - Internal seams are allowed only for real variation or deterministic fault
   injection. Do not introduce pass-through wrappers or public test hooks.
@@ -47,8 +47,8 @@
 
 ## High-risk changes
 
-- Treat the concurrency, cancellation, error-code, panic, and allocation rules
-  in sections 6–8 as indivisible invariants. Changes in these areas require
+- Treat the documented concurrency, cancellation, error-code, panic, and
+  allocation rules as indivisible invariants. Changes in these areas require
   focused tests at the same time as the implementation.
 - Test observable Swift behavior through the public interface. Test below it
   only for ABI behavior that cannot be observed safely from Swift.
@@ -75,9 +75,9 @@
   toolchain. Run Swift checks from the repository root.
 - Keep Swift sources and the manifest clean under
   `swift format lint --strict --recursive Package.swift Sources Tests`.
-- Use focused checks while iterating, then run every command in section 12 of
-  the specification once the corresponding implementation exists. Do not add
-  no-op scripts or placeholder artifacts merely to make that list appear green.
+- Use focused checks while iterating, then run the applicable `Justfile` CI and
+  artifact recipes. Do not add no-op scripts or placeholder artifacts merely
+  to make that list appear green.
 - Replace the bootstrap import test with behavioral tests as the public
   interface is implemented.
 - Never report an unrun check as passing. Record the exact command, result, and
@@ -85,8 +85,7 @@
 
 ## Documentation and completion
 
-- Keep implementation, the specification, README, notices, and examples
+- Keep implementation, the architecture overview, README, notices, and examples
   consistent. A user-approved contract change updates them together.
-- Completion is defined only by sections 14 and 15 of the specification.
-  Report actual artifact architecture, checksum, linker settings, verifier
+- Report actual artifact architecture, checksum, linker settings, verifier
   results, and remaining gaps; do not claim completion early.

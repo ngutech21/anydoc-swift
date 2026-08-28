@@ -1,47 +1,171 @@
-# Implementation Specification: AnyDocSwift
+# How AnyDocSwift Works
 
-## 1. Objective
+AnyDocSwift is a macOS Swift package that converts document bytes into
+GitHub-Flavored Markdown. It wraps the Rust
+[`anydoc`](https://github.com/firecrawl/anydoc) engine without exposing Rust or
+C types to applications.
 
-Create a standalone Swift package named `AnyDocSwift` that converts supported document bytes into GitHub-Flavored Markdown.
+This document is the architectural guide to the repository. For installation
+and a minimal example, start with the [README](../README.md).
 
-The package must:
+## At a glance
 
-- Run locally and in-process.
-- Wrap the Rust `anydoc` crate through a small, handwritten C ABI.
-- Ship the Rust implementation as a macOS XCFramework.
-- Expose one idiomatic asynchronous Swift conversion interface.
-- Return Markdown on success or a typed Swift error on failure.
-- Require neither Rust nor Cargo in consuming applications.
-- Never block the main actor during conversion.
+```text
+Application
+  |
+  | Data + optional file-extension hint
+  v
+AnyDocConverter (public Swift actor)
+  |
+  | normalized, size-checked request on a serial queue
+  v
+AnyDocCAdapter (private Swift adapter)
+  |
+  | length-delimited buffers through ABI version 1
+  v
+AnyDocSwiftBridge (packaged C module and Rust static library)
+  |
+  | content detection and conversion
+  v
+AnyDoc 0.2.3
+  |
+  | UTF-8 Markdown or a stable error code
+  v
+Application
+```
 
-The initial release targets macOS 13 or later on Apple Silicon.
+There are two distinct build-time experiences:
 
-## 2. Authoritative upstream version
+- Applications consume a checksum-pinned XCFramework through SwiftPM. They do
+  not need Rust, Cargo, or an external process.
+- Contributors can rebuild that XCFramework from the pinned Rust source and
+  toolchain, then test the Swift layer against the local artifact.
 
-Pin AnyDoc to:
+Conversion itself is local and in-process. It does not make network requests.
 
-- crates.io dependency: `anydoc = "=0.2.3"`
-- crates.io archive checksum:
-  `cba429594e94170aa99d2e4e0f596719ecc5c5df00269c671bc60c9e08172678`
-- Originating commit:
-  [`bf3d33e61731580d1ee1c6a85e56093d715a21a6`](https://github.com/firecrawl/anydoc/commit/bf3d33e61731580d1ee1c6a85e56093d715a21a6)
-- Minimum Rust toolchain: `1.88.0`
+## Repository map
 
-Use the immutable crates.io archive as the build source. Its
-`.cargo_vcs_info.json` records the originating commit above, which remains the
-implementation authority. Commit `Cargo.lock` and do not silently upgrade
-AnyDoc or its transitive dependencies.
+| Path | Responsibility |
+| --- | --- |
+| [`Package.swift`](../Package.swift) | Declares the public Swift library, private binary dependency, supported platform, and native linker settings. |
+| [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Contains the public actor and error type plus the private Swift-to-C adapter. |
+| [`Native/include/`](../Native/include/) | Defines the versioned C ABI and Clang module used by Swift. |
+| [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Implements the C ABI, owns native result memory, and calls the pinned AnyDoc engine. |
+| [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, concurrency, cancellation, error mapping, ABI validation, and ownership. |
+| [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded documents used for real conversions. |
+| [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains small C and Swift consumers used to validate the packaged framework. |
+| [`Examples/AnyDocSwiftExample/`](../Examples/AnyDocSwiftExample/) | Demonstrates a complete command-line consumer. |
+| [`Justfile`](../Justfile) | Provides the supported build, test, packaging, and verification entry points. |
+| [`.github/workflows/`](../.github/workflows/) | Runs CI and the separate native-binary and Swift-package release processes. |
+| [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler, components, and Apple Silicon target used for the bridge. |
 
-## 3. Scope
+SwiftPM is the root project. There is intentionally no root Xcode project.
 
-### Supported input
+## Layer responsibilities
 
-The wrapper accepts:
+### Public Swift API
 
-- Document contents as `Foundation.Data`.
-- An optional file-extension hint such as `"docx"` or `"csv"`.
+[`AnyDocConverter`](../Sources/AnyDocSwift/AnyDocConverter.swift) is the only
+conversion entry point. It accepts complete document data and an optional
+extension hint:
 
-Supported extensions:
+```swift
+let converter = AnyDocConverter()
+let markdown = try await converter.markdown(
+  from: documentData,
+  fileExtension: "docx"
+)
+```
+
+The actor owns the application-facing behavior:
+
+- normalizing the extension hint;
+- rejecting oversized input before native work starts;
+- scheduling blocking native work away from the main actor;
+- preserving FIFO execution for one converter instance; and
+- presenting cancellation and typed Swift errors.
+
+[`AnyDocConversionError`](../Sources/AnyDocSwift/AnyDocConversionError.swift)
+describes conversion failures without leaking native types. The static
+`AnyDocConverter.engineVersion` property reports the embedded AnyDoc revision
+and bridge ABI, which is useful in diagnostics.
+
+### Private Swift-to-C adapter
+
+[`AnyDocCAdapter`](../Sources/AnyDocSwift/AnyDocCAdapter.swift) is the ownership
+and validation boundary between safe Swift code and the native interface. It:
+
+- verifies that the packaged bridge implements ABI version 1;
+- keeps Swift input buffers alive for the synchronous C call;
+- copies every returned native buffer before its owner is released;
+- validates lengths, result shape, and UTF-8;
+- frees each native result exactly once; and
+- maps stable native error codes to `AnyDocConversionError` cases.
+
+The bridge dependency is an `internal import`, so applications importing
+`AnyDocSwift` do not see C declarations in the generated Swift interface.
+
+### C ABI
+
+[`anydoc_swift_bridge.h`](../Native/include/anydoc_swift_bridge.h) is a small,
+handwritten interface based on byte pointers plus explicit lengths. A
+conversion returns one opaque, Rust-owned result handle. Accessor functions
+borrow Markdown or error buffers from that handle, and one Rust-provided free
+function releases the handle and all of its buffers together.
+
+The ABI also reports its version and the embedded engine version. This lets the
+Swift adapter reject an incompatible or malformed binary instead of making
+unsafe assumptions about it.
+
+### Rust bridge and AnyDoc
+
+[`lib.rs`](../Rust/anydoc-swift-bridge/src/lib.rs) validates pointers, lengths,
+UTF-8, and configured limits before invoking AnyDoc. It detects the document
+format from the bytes first and uses the extension only as a fallback. The
+bridge calls AnyDoc's byte-to-Markdown path and converts its structured error
+code and message into owned result data.
+
+The complete native conversion is contained with Rust's `catch_unwind`. A
+panic becomes a bridge failure rather than unwinding through C into Swift.
+Release builds retain unwinding for this reason.
+
+The native dependency is pinned to `anydoc = "=0.2.3"` and its complete
+transitive graph is locked by
+[`Cargo.lock`](../Rust/anydoc-swift-bridge/Cargo.lock). The embedded engine
+version also records AnyDoc's originating revision so a diagnostic can identify
+the exact parser implementation.
+
+## Runtime conversion path
+
+One call to `markdown(from:fileExtension:)` follows this sequence:
+
+1. Swift checks task cancellation, normalizes the hint, and enforces the input
+   limit before invoking native code.
+2. The actor places the operation on its private serial queue. Work from one
+   converter is FIFO; separate converter instances have separate queues.
+3. The private adapter validates the packaged ABI and passes the data, hint,
+   and limits as length-delimited buffers.
+4. Rust validates the same boundary again, detects the format from content,
+   falls back to the hint when needed, and asks AnyDoc for Markdown.
+5. Rust enforces the output byte limit and returns either Markdown or a stable
+   error code and message in one opaque result.
+6. Swift validates and copies those bytes, translates any error, and frees the
+   Rust result on every exit path.
+7. Swift checks cancellation again before returning the Markdown.
+
+This split keeps policy that matters to Swift callers in Swift, parsing in
+AnyDoc, and pointer ownership at the FFI seam.
+
+## Behavior applications should account for
+
+### Format detection
+
+Content detection is authoritative. The extension is a hint for formats that
+cannot be identified reliably from bytes; CSV specifically requires the `csv`
+hint. The hint is trimmed, one leading period is removed, and the result is
+lowercased before it reaches the bridge.
+
+Supported hints are:
 
 - Word: `doc`, `docx`, `docm`
 - PowerPoint: `ppt`, `pps`, `pot`, `pptx`, `pptm`, `ppsx`, `ppsm`
@@ -49,508 +173,159 @@ Supported extensions:
 - OpenDocument: `odt`, `ods`, `odp`
 - Other: `rtf`, `epub`, `csv`, `pdf`
 
-Detection must inspect document contents first. The extension is only a fallback. CSV requires an extension hint because it has no reliable binary signature.
+The API returns Markdown only. It does not expose AnyDoc's internal document
+model or extract embedded assets.
 
-### Output
+### Limits and loading
 
-Successful conversion returns one UTF-8 Markdown `String`.
-
-The wrapper does not expose AnyDoc’s internal document model, embedded assets, parser types, or Rust types.
-
-Embedded images and objects may appear only as Markdown alt text. Asset extraction is outside this specification.
-
-### PDF behavior
-
-Document the following behavior prominently:
-
-- Text-based PDFs can be converted.
-- Image-only and scanned PDFs are unsupported.
-- Mixed PDFs may return successful Markdown while omitting pages that require OCR.
-- A successful PDF conversion means meaningful Markdown was produced; it does not guarantee that every page was extracted.
-- The wrapper must not parse log messages to infer PDF completeness.
-
-### Explicit non-goals
-
-The first release does not provide:
-
-- OCR.
-- Streaming output.
-- Native cancellation of an active parser call.
-- Progress reporting.
-- File-path or security-scoped URL handling.
-- Persistence or caching.
-- Embedded asset extraction.
-- iOS, Mac Catalyst, visionOS, or Intel macOS support.
-
-## 4. Module design
-
-Implement one deep Swift module with a small public interface:
-
-```text
-Swift application
-    -> AnyDocSwift public interface
-        -> private Swift-to-C adapter
-            -> C ABI
-                -> Rust bridge
-                    -> pinned AnyDoc implementation
-```
-
-Format detection, parser selection, Rust memory ownership, background scheduling, output limits, error translation, panic containment, and version reporting belong behind the interface.
-
-Do not add a public protocol, factory, parser registry, or format-specific converter. Tests may use a package-internal seam for fault injection, but that seam must not become public.
-
-## 5. Public Swift interface
-
-Expose only the following conceptual interface. Naming changes require a concrete technical reason.
+The standard limits are 64 MiB of input and 16 MiB of UTF-8 Markdown. Both are
+measured in bytes. Applications can create a converter with different limits:
 
 ```swift
-import Foundation
-
-public actor AnyDocConverter {
-    public struct Limits: Sendable, Equatable {
-        public static let standard = Limits(
-            maximumInputBytes: 64 * 1024 * 1024,
-            maximumOutputBytes: 16 * 1024 * 1024
-        )
-
-        public let maximumInputBytes: UInt64
-        public let maximumOutputBytes: UInt64
-
-        public init(
-            maximumInputBytes: UInt64,
-            maximumOutputBytes: UInt64
-        )
-    }
-
-    public init(limits: Limits = .standard)
-
-    public func markdown(
-        from data: Data,
-        fileExtension: String? = nil
-    ) async throws -> String
-
-    public static var engineVersion: String { get }
-}
+let converter = AnyDocConverter(
+  limits: .init(
+    maximumInputBytes: 20 * 1024 * 1024,
+    maximumOutputBytes: 5 * 1024 * 1024
+  )
+)
 ```
 
-Define this typed error:
-
-```swift
-public enum AnyDocConversionError:
-    Error,
-    Sendable,
-    Equatable,
-    LocalizedError
-{
-    case inputTooLarge(
-        actualBytes: UInt64,
-        maximumBytes: UInt64
-    )
-    case outputTooLarge(maximumBytes: UInt64)
-    case invalidInput(String)
-    case unsupported(String)
-    case malformed(String)
-    case encrypted(String)
-    case resourceLimit(String)
-    case missingPart(String)
-    case io(String)
-    case unrecognizedUpstream(
-        code: String,
-        message: String
-    )
-    case bridgeFailure(String)
-}
-```
-
-Requirements:
-
-- Map known upstream error codes without parsing human-readable messages.
-- Preserve unknown future upstream codes using `unrecognizedUpstream`.
-- Represent task cancellation with `CancellationError`, not `AnyDocConversionError`.
-- Provide useful, non-sensitive `LocalizedError` descriptions.
-- Do not expose C or Rust declarations through the generated Swift interface.
-
-## 6. Swift behavior
-
-### Extension normalization
-
-Before entering the native bridge:
-
-1. Trim surrounding whitespace.
-2. Remove one leading period.
-3. Lowercase using locale-independent rules.
-4. Treat an empty result as no extension.
-5. Reject extension hints longer than 64 UTF-8 bytes as `invalidInput`.
-
-An unrecognized but valid extension remains a hint; content detection must still be attempted first.
-
-### Limits
-
-- Reject data exceeding `maximumInputBytes` before invoking native code.
-- Pass both configured limits into the Rust bridge for defense in depth.
-- Enforce the Markdown limit inside Rust before returning data across the ABI.
-- Check the returned length again in Swift.
-- Measure both limits in bytes, not characters.
-
-The input limit does not replace a caller-side file-size check before loading a file into `Data`.
-
-### Execution and concurrency
-
-- Execute the synchronous native call on a dedicated serial queue.
-- Never perform parsing on `MainActor`.
-- Preserve FIFO execution within one `AnyDocConverter` instance.
-- Different converter instances may operate concurrently.
-- Check cancellation before enqueueing, when queued work begins, and after
-  native conversion.
-- If a task is cancelled while waiting on the serial queue, skip its native
-  call and throw `CancellationError`.
-- Once native conversion begins, cancellation cannot interrupt it. The native operation finishes, its allocation is released, and the Swift task then throws `CancellationError`.
-
-These semantics must be documented as part of the interface.
-
-## 7. C ABI
-
-Create a Rust `staticlib` with an opaque result handle. Use length-delimited UTF-8 buffers instead of NUL-terminated input strings.
-
-The public header should be equivalent to:
-
-```c
-#ifndef ANYDOC_SWIFT_BRIDGE_H
-#define ANYDOC_SWIFT_BRIDGE_H
-
-#include <stddef.h>
-#include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef struct anydoc_swift_result anydoc_swift_result_t;
-
-uint32_t anydoc_swift_abi_version(void);
-
-const uint8_t *anydoc_swift_engine_version(
-    size_t *out_length
-);
-
-anydoc_swift_result_t *anydoc_swift_convert_markdown(
-    const uint8_t *bytes,
-    size_t bytes_length,
-    const uint8_t *extension_utf8,
-    size_t extension_length,
-    uint64_t maximum_input_bytes,
-    uint64_t maximum_output_bytes
-);
-
-int32_t anydoc_swift_result_is_success(
-    const anydoc_swift_result_t *result
-);
-
-const uint8_t *anydoc_swift_result_markdown(
-    const anydoc_swift_result_t *result,
-    size_t *out_length
-);
-
-const uint8_t *anydoc_swift_result_error_code(
-    const anydoc_swift_result_t *result,
-    size_t *out_length
-);
-
-const uint8_t *anydoc_swift_result_error_message(
-    const anydoc_swift_result_t *result,
-    size_t *out_length
-);
-
-void anydoc_swift_result_free(
-    anydoc_swift_result_t *result
-);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
-```
-
-### ABI invariants
-
-- ABI version starts at `1`.
-- `bytes` may be null only when `bytes_length == 0`.
-- `extension_utf8` may be null only when `extension_length == 0`.
-- Returned buffers remain valid until `anydoc_swift_result_free`.
-- Swift must copy every returned buffer before freeing the result.
-- A result must be freed exactly once with the Rust-provided free function.
-- `anydoc_swift_result_free(NULL)` is a no-op.
-- Accessors receiving null return null and set the output length to zero.
-- A success result contains Markdown and no error.
-- A failure result contains an error code and message and no Markdown.
-- No Rust `String`, `Vec`, enum, or allocator-owned pointer may be freed directly by Swift.
-
-## 8. Rust bridge requirements
-
-The Rust implementation must:
-
-- Use `crate-type = ["staticlib"]`.
-- Pin AnyDoc to the exact specified crates.io release and verify its recorded
-  originating revision.
-- Use `#[unsafe(no_mangle)] extern "C"` exports appropriate for Rust 2024.
-- Validate every pointer and length before constructing a slice.
-- Decode the extension as UTF-8 without unchecked conversion.
-- Detect format from bytes first and extension second.
-- Call only the upstream byte-to-Markdown conversion path.
-- Translate `ConvertError::code()` and `Display` into owned result data.
-- Preserve these upstream codes:
-  - `unsupported`
-  - `malformed`
-  - `encrypted`
-  - `resourceLimit`
-  - `missingPart`
-  - `io`
-- Use wrapper-owned codes for:
-  - `wrapper.invalidInput`
-  - `wrapper.inputLimit`
-  - `wrapper.outputLimit`
-  - `bridge.panic`
-- Wrap the complete conversion operation in `catch_unwind`.
-- Compile releases with unwinding enabled so a Rust panic never crosses the C ABI.
-- Never include document contents in diagnostics or panic messages.
-- Remain stateless and avoid mutable global parser state.
-
-`engineVersion` should return a static value containing the AnyDoc version, exact revision, and bridge ABI version.
-The Swift adapter must validate ABI version `1` and strict UTF-8 before exposing
-that value. Because the public property is nonthrowing, an ABI mismatch, null or
-empty version buffer, or invalid UTF-8 returns the fixed string
-`AnyDoc engine version unavailable`. Conversion calls report the same integrity
-failures as `bridgeFailure`.
-
-## 9. Package structure
-
-Use a structure equivalent to:
-
-```text
-Package.swift
-Sources/
-  AnyDocSwift/
-    AnyDocConverter.swift
-    AnyDocConversionError.swift
-    AnyDocCAdapter.swift
-Rust/
-  anydoc-swift-bridge/
-    Cargo.toml
-    Cargo.lock
-    src/
-      lib.rs
-rust-toolchain.toml
-Native/
-  include/
-    anydoc_swift_bridge.h
-    module.modulemap
-Tests/
-  AnyDocSwiftTests/
-  Fixtures/
-  ArtifactSmoke/
-    main.c
-    main.swift
-Examples/
-  ConsumerApp/
-Justfile
-LICENSE
-THIRD_PARTY_NOTICES.md
-README.md
-```
-
-`Package.swift` must:
-
-- Use Swift tools version 6.1 or later.
-- Declare macOS 13 as the minimum platform.
-- Expose the `AnyDocSwift` library product.
-- Include the XCFramework as a checksum-pinned remote binary target after its
-  immutable release asset has been published and verified.
-- Keep the C module internal to the Swift implementation.
-
-## 10. XCFramework build
-
-The Justfile artifact recipes must compose the standard Cargo, Xcode, and
-SwiftPM commands to:
-
-1. Verify the expected Rust toolchain.
-2. Build with `cargo build --release --locked --target aarch64-apple-darwin`.
-3. Set `MACOSX_DEPLOYMENT_TARGET=13.0`.
-4. Produce the static library.
-5. Stage the header and module map.
-6. Create `AnyDocSwiftBridge.xcframework` with `xcodebuild -create-xcframework`.
-7. Verify that the artifact contains only the expected macOS arm64 slice.
-8. Package the XCFramework as a ZIP under the ignored `.build/artifacts`
-   directory.
-9. Record the ZIP's SwiftPM-compatible SHA-256 checksum.
-10. Run a C-link smoke test against the packaged artifact.
-11. Run a Swift consumer build that has no dependency on Cargo.
-
-The recipe interface is:
-
-```text
-just build-artifact
-just verify-artifact [archive]
-just artifact
-```
-
-`just artifact` performs both steps. The default archive is
-`.build/artifacts/AnyDocSwiftBridge.xcframework.zip`.
-
-Release archives are published outside Git under immutable `binary-<version>`
-GitHub release tags. Never replace an existing release archive in place; a
-native change requires a new bridge version, release URL, and checksum.
-
-Inspect the Rust build’s required native libraries and Apple frameworks. Declare any required linker settings explicitly in `Package.swift`; do not guess or rely on developer-machine environment state.
-
-Consuming applications must not invoke Cargo during resolution, build, or execution.
-
-## 11. Tests
-
-Tests must use committed fixtures with recorded provenance and hashes and must
-not access network resources at runtime. Resolving the locked Cargo dependency
-graph on a clean machine may access crates.io.
-
-### Rust tests
-
-Cover:
-
-- Null-pointer and length validation.
-- Empty input.
-- Invalid UTF-8 extension.
-- Input and output limits.
-- Content-first detection.
-- Extension fallback.
-- Upstream error-code preservation.
-- Unknown error-code preservation.
-- Panic containment through an internal test seam.
-- Success and failure result invariants.
-- Null-safe accessors and free function.
-- Embedded version and ABI information.
-
-### Swift tests
-
-Cover:
-
-- Successful Markdown conversion.
-- Extension normalization.
-- Mislabeled files detected by content.
-- CSV success with an extension.
-- CSV failure without an extension.
-- Every supported extension mapping.
-- Input and output limits.
-- Every typed error mapping.
-- Unknown upstream errors.
-- Invalid native UTF-8 reported as `bridgeFailure`.
-- Native results freed on every success, failure, and cancellation path.
-- FIFO serialization.
-- Main-actor responsiveness using deterministic gates rather than timing sleeps.
-- Cancellation before dispatch, while queued, and during an active native call.
-- Engine-version fallback for ABI mismatch, missing data, and invalid native
-  UTF-8.
-
-### Fixture coverage
-
-Include representative fixtures for:
-
-- Legacy and OOXML Word documents.
-- Legacy and OOXML presentations.
-- Legacy, OOXML, and binary spreadsheets.
-- OpenDocument text, spreadsheet, and presentation files.
-- RTF.
-- EPUB.
-- CSV.
-- Text PDF.
-- Image-only PDF.
-- Mixed text/OCR PDF.
-- Encrypted input.
-- Malformed archives.
-- Upstream resource-limit cases.
-
-Snapshot expected Markdown for the pinned AnyDoc revision. An upstream upgrade must intentionally review and update these snapshots.
-
-## 12. Verification commands
-
-The finished implementation must pass:
-
-```text
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-swift build
-swift build -c release
-swift test
-just artifact
-```
-
-The repository exposes those checks through the same Justfile entrypoints used
-by continuous integration:
-
-```text
-just build-rust
-just test-rust
-just build-swift
-just test-swift
+The input limit applies after the caller has loaded a document into `Data`.
+Applications handling untrusted or very large files should also check file
+size before loading the complete contents into memory.
+
+### Concurrency and cancellation
+
+Native parsing is synchronous, so the Swift actor moves it to a dedicated
+serial queue instead of blocking the main actor. Use one converter when FIFO
+ordering is desirable; use multiple converter instances when independent
+documents should be eligible to run concurrently.
+
+Cancellation can prevent queued work from starting. It cannot interrupt an
+AnyDoc call that is already running. In that case conversion and native cleanup
+finish first, then the awaiting task receives `CancellationError`.
+
+### Errors
+
+Expected conversion problems use `AnyDocConversionError`, including invalid or
+oversized input, oversized output, unsupported, malformed, encrypted, missing,
+resource-limited, and I/O cases. Unknown future AnyDoc codes are preserved in
+`unrecognizedUpstream(code:message:)` rather than being inferred from message
+text. ABI mismatches, invalid native UTF-8, panics, and inconsistent native
+results become `bridgeFailure`.
+
+Task cancellation is deliberately represented by Swift's `CancellationError`,
+not by `AnyDocConversionError`.
+
+### PDFs
+
+Text-based PDFs can be converted. Image-only and scanned PDFs need OCR, which
+this package does not provide. Mixed PDFs may return useful Markdown while
+omitting pages that require OCR, so success does not guarantee that every page
+was extracted.
+
+### Current platform and feature boundaries
+
+The released binary targets macOS 13 or later on Apple Silicon. The package
+currently works on complete in-memory documents and does not provide:
+
+- OCR;
+- streaming output or progress reporting;
+- interruption of an active native parser call;
+- file-path or security-scoped URL handling;
+- persistence or caching; or
+- embedded asset extraction.
+
+## Binary packaging
+
+[`Package.swift`](../Package.swift) exposes the `AnyDocSwift` library and keeps
+`AnyDocSwiftBridge` private to its implementation target. The bridge is a
+remote binary target whose release URL and SHA-256 checksum are pinned together.
+SwiftPM downloads and verifies that archive for ordinary `swift build` and
+`swift test` commands.
+
+For native development, `just artifact` performs the reproducible path:
+
+1. build the Rust `staticlib` for `aarch64-apple-darwin` with the pinned Rust
+   toolchain and macOS 13 deployment target;
+2. combine the library, C header, and module map into an XCFramework;
+3. package the framework as a ZIP and compute its SwiftPM checksum; and
+4. reopen and validate the package, including its platform, architecture,
+   headers, exported ABI, and C and Swift smoke consumers.
+
+The ignored output is
+`.build/artifacts/AnyDocSwiftBridge.xcframework.zip`. The local Swift recipes
+set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` and provide the verified framework's
+headers and library explicitly; that switch is for repository validation, not
+for package consumers.
+
+Native releases and Swift package releases are intentionally separate:
+
+- `binary-X.Y.Z` releases contain an immutable XCFramework archive.
+- `X.Y.Z` releases tag a `Package.swift` that points at a published binary URL
+  and checksum.
+
+A native change is released first under a new `binary-` tag. The manifest is
+then updated to that immutable asset and checksum before the Swift package is
+released. The workflows refuse to replace existing tags or releases.
+
+## Development and verification
+
+Install the pinned Rust toolchain, Swift 6.1 or later, Xcode command-line tools,
+and [`just`](https://github.com/casey/just). From the repository root:
+
+```sh
+# Show every supported task.
+just --list
+
+# Run Rust formatting, linting, builds, and tests.
 just ci-rust
+
+# Build and verify a local XCFramework, lint and build Swift, and run Swift tests.
 just ci-swift
+
+# Run both suites.
 just ci
+
+# Only build, package, and verify the native release archive.
+just artifact
 ```
 
-`just ci-rust` performs Rust formatting, linting, building, and testing.
-`just ci-swift` performs strict Swift format linting, builds and verifies the
-local XCFramework, builds the Swift package in debug and release configurations,
-and runs its tests against that verified artifact. It must not modify
-`Package.swift` to inject a local binary target. `just ci` performs both suites.
+The tests are organized around the seams they protect:
 
-Also build and run the example consumer application on Apple Silicon without using a locally built Rust library.
+- Rust tests cover raw-buffer validation, detection, limits, error codes,
+  result invariants, panic containment, and the exported ABI.
+- Swift adapter tests cover ABI and UTF-8 validation, error translation,
+  output bounds, malformed native results, and result cleanup.
+- Public actor tests cover normalization, limits, FIFO execution, independent
+  concurrency, main-actor responsiveness, and cancellation at each stage.
+- Artifact smoke tests prove that packaged C and Swift consumers can link and
+  run without Cargo on `PATH`.
+- Real RTF and CSV fixtures exercise the pinned AnyDoc engine. Their provenance
+  and hashes are recorded in [`Tests/Fixtures/README.md`](../Tests/Fixtures/README.md).
 
-Run a repeated-conversion leak check against the release artifact and verify that result handles and returned buffers are not leaked.
+Tests themselves do not access the network. A clean Cargo build may need
+network access once to resolve the locked crates.io dependency graph.
 
-## 13. Documentation and licensing
+## Making changes safely
 
-The README must include:
+The module stays small by keeping each behavior at one owning seam:
 
-- Swift Package integration instructions.
-- A minimal conversion example.
-- Supported formats.
-- Input and output limit semantics.
-- Error behavior.
-- Concurrency and cancellation semantics.
-- PDF completeness limitations.
-- The embedded AnyDoc version and revision.
-- Instructions for rebuilding the XCFramework.
+- Public behavior, scheduling, or cancellation changes belong in
+  `AnyDocConverter.swift` with public actor tests.
+- Error presentation changes belong in `AnyDocConversionError.swift`; native
+  code mapping stays in `AnyDocCAdapter.swift`.
+- Pointer, result-ownership, detection, or AnyDoc integration changes belong in
+  the Rust bridge and require focused Rust and adapter tests.
+- An ABI change must update the C header, Rust exports, Swift adapter, ABI
+  version, smoke tests, and native binary release as one unit.
+- An AnyDoc upgrade must update the exact Cargo dependency, lockfile, embedded
+  version and revision, fixture expectations, and released XCFramework
+  intentionally.
+- Linker settings must come from the built artifact rather than assumptions
+  about a developer machine.
 
-Retain AnyDoc’s MIT license notice. Generate and review a third-party license report from the locked Rust dependency graph and commit it as `THIRD_PARTY_NOTICES.md`.
-
-## 14. Acceptance criteria
-
-The work is complete only when:
-
-- A macOS Swift application can import `AnyDocSwift` and convert document `Data` to Markdown.
-- The consuming application needs no Rust toolchain or external runtime.
-- No C or Rust type appears in the public Swift interface.
-- Detection is content-first with extension fallback.
-- CSV behavior is covered explicitly.
-- Known conversion failures produce distinct Swift errors.
-- Unknown upstream error codes remain observable.
-- Malformed or encrypted fixtures cannot unwind across the ABI.
-- Input and output limits are enforced.
-- Conversion does not block the main actor.
-- Every native allocation is released by Rust.
-- PDF and embedded-asset limitations are documented accurately.
-- No speculative public abstractions or unfinished compatibility paths remain.
-- The exact AnyDoc revision, Cargo lockfile, XCFramework, checksum, notices, and verification results are present.
-
-## 15. Implementation reporting
-
-When implementation is finished, report:
-
-- Files added or changed.
-- The final public Swift interface.
-- The exact upstream revision.
-- XCFramework architecture and checksum.
-- Required native linker settings.
-- Every verification command and its actual result.
-- Any acceptance criterion that remains unverified.
-
-Do not report completion while required checks are failing or skipped without a concrete explanation.
+The core invariants are that native work never blocks the main actor, C and Rust
+types remain private, buffers never outlive their Rust owner, a panic never
+crosses the C ABI, and consuming applications never build or link an unpackaged
+Rust library.

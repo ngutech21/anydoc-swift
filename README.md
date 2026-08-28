@@ -9,11 +9,12 @@ logic. Instead, it exposes the pinned AnyDoc engine through a small asynchronous
 Swift interface and handles the Swift integration boundary, including binary
 packaging, scheduling, cancellation, limits, and typed errors.
 
-The implementation contract and acceptance criteria live in
-[`docs/spec.md`](docs/spec.md). The Rust bridge and Swift public interface are
-implemented and tested against a verified XCFramework. Its immutable release
-archive is integrated as a checksum-pinned SwiftPM binary target, so ordinary
-package consumers do not need a Rust toolchain.
+The project structure, runtime path, native ownership model, and contributor
+workflow are explained in [`docs/spec.md`](docs/spec.md). The Rust bridge and
+Swift public interface are implemented and tested against a verified
+XCFramework. Its immutable release archive is integrated as a checksum-pinned
+SwiftPM binary target, so ordinary package consumers do not need a Rust
+toolchain.
 
 ## Requirements
 
