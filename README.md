@@ -32,7 +32,7 @@ Add AnyDocSwift to your Swift package dependencies and include the
 dependencies: [
   .package(
     url: "https://github.com/ngutech21/anydoc-swift.git",
-    exact: "0.1.3"
+    exact: "0.1.4"
   )
 ],
 targets: [
@@ -46,7 +46,7 @@ targets: [
 ```
 
 In Xcode, choose **File > Add Package Dependencies**, enter
-`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.3`, and
+`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.4`, and
 add the `AnyDocSwift` library to your application target.
 
 SwiftPM downloads the checksum-pinned native artifact automatically. Consumer
@@ -141,10 +141,10 @@ The native bridge also incorporates third-party Rust crates whose exact
 licenses and attribution notices are recorded in
 [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt).
 
-Artifacts built from this revision embed both files in the signed framework's
-`Resources` directory. Distributors must retain those resources when copying or
-embedding the framework. Maintainers can regenerate the notice file with
-`just update-licenses`; `just check-licenses` and CI reject dependency or
-license drift. The currently pinned immutable `binary-0.1.3` archive is not
-rewritten; a newly published native archive and checksum are required before a
-later Swift package release can include these resources.
+The checksum-pinned `binary-0.1.4` archive embeds both files in the signed
+framework's `Resources` directory. Distributors must retain those resources
+when copying or embedding the framework. Maintainers can regenerate the notice
+file with `just update-licenses`; `just check-licenses` and CI reject dependency
+or license drift. Published native archives are immutable; changes to these
+resources require a new binary release and checksum before the next Swift
+package release.
