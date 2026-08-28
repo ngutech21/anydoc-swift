@@ -11,7 +11,7 @@ let package = Package(
   dependencies: [
     .package(
       url: "https://github.com/ngutech21/anydoc-swift.git",
-      exact: "0.1.2"
+      exact: "0.1.3"
     )
   ],
   targets: [
