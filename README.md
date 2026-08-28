@@ -2,8 +2,12 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ngutech21/anydoc-swift/ci.yml?branch=master&event=push&label=CI)](https://github.com/ngutech21/anydoc-swift/actions/workflows/ci.yml)
 
-AnyDocSwift is a macOS Swift package for converting supported document bytes
-to GitHub-Flavored Markdown through the pinned Rust `anydoc` engine.
+AnyDocSwift is a macOS Swift package and an intentionally shallow wrapper around
+[AnyDoc](https://github.com/firecrawl/anydoc), the Rust document-to-Markdown
+conversion library. It does not reimplement AnyDoc's parsers or conversion
+logic. Instead, it exposes the pinned AnyDoc engine through a small asynchronous
+Swift interface and handles the Swift integration boundary, including binary
+packaging, scheduling, cancellation, limits, and typed errors.
 
 The implementation contract and acceptance criteria live in
 [`docs/spec.md`](docs/spec.md). The Rust bridge and Swift public interface are
@@ -17,7 +21,36 @@ package consumers do not need a Rust toolchain.
 - Swift 6.1 or later
 - Rust 1.88.0 when rebuilding the native bridge
 
-## Development
+## Installation
+
+Add AnyDocSwift to your Swift package dependencies and include the
+`AnyDocSwift` product in your target:
+
+```swift
+dependencies: [
+  .package(
+    url: "https://github.com/ngutech21/anydoc-swift.git",
+    exact: "0.1.2"
+  )
+],
+targets: [
+  .target(
+    name: "YourTarget",
+    dependencies: [
+      .product(name: "AnyDocSwift", package: "anydoc-swift")
+    ]
+  )
+]
+```
+
+In Xcode, choose **File > Add Package Dependencies**, enter
+`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.2`, and
+add the `AnyDocSwift` library to your application target.
+
+SwiftPM downloads the checksum-pinned native artifact automatically. Consumer
+applications do not need Rust, Cargo, or another runtime.
+
+## Usage
 
 Conversion uses one actor with a small public interface:
 
@@ -30,6 +63,17 @@ let markdown = try await converter.markdown(
   fileExtension: "docx"
 )
 ```
+
+A complete command-line consumer is available in
+[`Examples/AnyDocSwiftExample`](Examples/AnyDocSwiftExample). From the
+repository root, run it with a document path:
+
+```sh
+cd Examples/AnyDocSwiftExample
+swift run AnyDocSwiftExample /path/to/document.docx
+```
+
+## Behavior
 
 Each converter runs native calls in FIFO order on its own serial queue; separate
 instances may run concurrently. Cancellation before native work starts skips
