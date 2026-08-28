@@ -28,8 +28,8 @@ let package = Package(
     .binaryTarget(
       name: "AnyDocSwiftBridge",
       url:
-        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.1/AnyDocSwiftBridge.xcframework.zip",
-      checksum: "7877370f0ffe12181cc9e7605698f34895cc195020d0fcb8e82fa4f1e970658b"
+        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.2/AnyDocSwiftBridge.xcframework.zip",
+      checksum: "b24ec29d9b468b1ee2cbae6626a0bc8ca0d8136e6ea3aac4eb148d16721f0b76"
     ),
     .testTarget(
       name: "AnyDocSwiftTests",
