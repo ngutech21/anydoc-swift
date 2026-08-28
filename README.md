@@ -20,7 +20,7 @@ toolchain.
 
 - macOS 13 or later on Apple Silicon
 - Swift 6.1 or later
-- Rust 1.88.0 when rebuilding the native bridge
+- Rust 1.98.0 when rebuilding the native bridge
 
 ## Installation
 

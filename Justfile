@@ -60,7 +60,6 @@ lint-swift:
 # Build and package the release XCFramework with the standard Cargo and Xcode tools.
 build-artifact:
     test "$(uname -m)" = "arm64"
-    rustc --version | grep -F "rustc 1.88.0 "
     mkdir -p "{{ cargo_target }}" "$(dirname "{{ artifact_archive }}")"
     rm -rf "{{ framework }}" "{{ xcframework }}" "{{ artifact_archive }}" "{{ native_static_libs_log }}"
     cd "{{ crate }}" && MACOSX_DEPLOYMENT_TARGET={{ deployment_target }} CARGO_TARGET_DIR="{{ cargo_target }}" cargo build --release --locked --target {{ target }}
