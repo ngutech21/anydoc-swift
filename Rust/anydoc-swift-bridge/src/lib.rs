@@ -5,6 +5,8 @@
     deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
 )]
 
+mod engine;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::{ptr, slice, str};
 
@@ -65,20 +67,6 @@ impl BridgeFailure {
     }
 }
 
-impl From<anydoc::ConvertError> for BridgeFailure {
-    fn from(error: anydoc::ConvertError) -> Self {
-        let code = error.code().to_owned();
-        let message = error.to_string();
-        Self { code, message }
-    }
-}
-
-fn convert_markdown(bytes: &[u8], extension: Option<&str>) -> Result<String, anydoc::ConvertError> {
-    let format = anydoc::Format::from_bytes(bytes)
-        .or_else(|| extension.and_then(anydoc::Format::from_extension));
-    anydoc::to_markdown_bytes(bytes, format)
-}
-
 fn validate_buffer(pointer: *const u8, length: usize, name: &str) -> Result<(), BridgeFailure> {
     if pointer.is_null() && length != 0 {
         return Err(BridgeFailure::new(
@@ -97,22 +85,6 @@ fn validate_buffer(pointer: *const u8, length: usize, name: &str) -> Result<(), 
     Ok(())
 }
 
-/// Borrows a previously validated C buffer.
-///
-/// The caller guarantees that a non-empty buffer is readable for `length`
-/// bytes for the returned borrow's lifetime. Zero-length buffers never
-/// construct a slice from their possibly null pointer.
-unsafe fn borrow_buffer<'a>(pointer: *const u8, length: usize) -> &'a [u8] {
-    if length == 0 {
-        &[]
-    } else {
-        // SAFETY: `validate_buffer` rejected null and oversized buffers. The
-        // exported interface requires the caller to provide readable storage
-        // for the complete length while this synchronous call is active.
-        unsafe { slice::from_raw_parts(pointer, length) }
-    }
-}
-
 unsafe fn convert_raw(
     bytes: *const u8,
     bytes_length: usize,
@@ -124,26 +96,24 @@ unsafe fn convert_raw(
     validate_buffer(bytes, bytes_length, "bytes")?;
     validate_buffer(extension_utf8, extension_length, "extension_utf8")?;
 
-    let input_length = u64::try_from(bytes_length).map_err(|_| {
-        BridgeFailure::new(
-            INPUT_LIMIT_CODE,
-            "input length cannot be represented as UInt64",
-        )
-    })?;
-    if input_length > maximum_input_bytes {
-        return Err(BridgeFailure::new(
-            INPUT_LIMIT_CODE,
-            format!(
-                "input is {input_length} bytes, exceeding the {maximum_input_bytes}-byte limit"
-            ),
-        ));
-    }
-
-    // SAFETY: Both pointer/length pairs were validated above, and the caller
-    // promises that their storage remains readable for this synchronous call.
-    let bytes = unsafe { borrow_buffer(bytes, bytes_length) };
-    // SAFETY: Same argument as for `bytes` immediately above.
-    let extension_bytes = unsafe { borrow_buffer(extension_utf8, extension_length) };
+    let bytes = if bytes_length == 0 {
+        &[]
+    } else {
+        // SAFETY: `validate_buffer` rejected null and oversized buffers. The
+        // exported interface requires the caller to provide readable storage
+        // for the complete length while this synchronous call is active. The
+        // resulting borrow remains local to this call.
+        unsafe { slice::from_raw_parts(bytes, bytes_length) }
+    };
+    let extension_bytes = if extension_length == 0 {
+        &[]
+    } else {
+        // SAFETY: `validate_buffer` rejected null and oversized buffers. The
+        // exported interface requires the caller to provide readable storage
+        // for the complete length while this synchronous call is active. The
+        // resulting borrow remains local to this call.
+        unsafe { slice::from_raw_parts(extension_utf8, extension_length) }
+    };
     let extension = if extension_bytes.is_empty() {
         None
     } else {
@@ -152,23 +122,7 @@ unsafe fn convert_raw(
         })?)
     };
 
-    let markdown = convert_markdown(bytes, extension).map_err(BridgeFailure::from)?;
-    let output_length = u64::try_from(markdown.len()).map_err(|_| {
-        BridgeFailure::new(
-            OUTPUT_LIMIT_CODE,
-            "Markdown length cannot be represented as UInt64",
-        )
-    })?;
-    if output_length > maximum_output_bytes {
-        return Err(BridgeFailure::new(
-            OUTPUT_LIMIT_CODE,
-            format!(
-                "Markdown is {output_length} bytes, exceeding the {maximum_output_bytes}-byte limit"
-            ),
-        ));
-    }
-
-    Ok(markdown)
+    engine::convert_markdown(bytes, extension, maximum_input_bytes, maximum_output_bytes)
 }
 
 fn run_conversion<F>(operation: F) -> *mut AnydocSwiftResult
@@ -517,7 +471,8 @@ mod tests {
 
     #[test]
     fn converts_real_rtf_bytes_to_markdown() {
-        let markdown = convert_markdown(RTF_FIXTURE, None).expect("RTF fixture should convert");
+        let markdown = engine::convert_markdown(RTF_FIXTURE, None, u64::MAX, u64::MAX)
+            .expect("RTF fixture should convert");
         assert_eq!(markdown, RTF_MARKDOWN);
     }
 

@@ -121,11 +121,16 @@ unsafe assumptions about it.
 
 ### Rust bridge and AnyDoc
 
-[`lib.rs`](../Rust/anydoc-swift-bridge/src/lib.rs) validates pointers, lengths,
-UTF-8, and configured limits before invoking AnyDoc. It detects the document
-format from the bytes first and uses the extension only as a fallback. The
-bridge calls AnyDoc's byte-to-Markdown path and converts its structured error
-code and message into owned result data.
+[`lib.rs`](../Rust/anydoc-swift-bridge/src/lib.rs) is the FFI adapter. It owns
+raw-pointer validation and borrowing, UTF-8 decoding, panic containment, opaque
+result handles, buffer accessors, and Rust-side deallocation. Unsafe operations
+remain documented and local to that adapter.
+
+[`engine.rs`](../Rust/anydoc-swift-bridge/src/engine.rs) is compiled with
+`forbid(unsafe_code)` and owns configured limits, content-first format
+detection, the extension fallback, AnyDoc's byte-to-Markdown call, and
+structured upstream error conversion. Its only interface accepts borrowed
+bytes, an optional validated extension, and the two byte limits.
 
 The complete native conversion is contained with Rust's `catch_unwind`. A
 panic becomes a bridge failure rather than unwinding through C into Swift.
