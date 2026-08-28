@@ -20,7 +20,7 @@ toolchain.
 
 - macOS 13 or later on Apple Silicon
 - Swift 6.1 or later
-- Rust 1.98.0 when rebuilding the native bridge
+- Rust 1.94.1 when rebuilding the native bridge
 - `just`, `jq`, `actionlint`, and `cargo-about 0.9.1` for contributor validation
 
 ## Installation
