@@ -12,3 +12,12 @@ ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
 workarounds = ["chrono", "cocoa"]
 private = { ignore = true }
+
+# The crate ships two whitespace-different copies of the MIT license.
+[miniz_oxide.clarify]
+license = "MIT OR Zlib OR Apache-2.0"
+
+[[miniz_oxide.clarify.files]]
+path = "LICENSE-MIT.md"
+license = "MIT"
+checksum = "799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d"
