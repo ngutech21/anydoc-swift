@@ -96,10 +96,10 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Install just
+      - name: Install build tools
         uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
         with:
-          tool: just
+          tool: just,cargo-about@0.9.1
 
       - name: Build and verify release artifact
         id: artifact

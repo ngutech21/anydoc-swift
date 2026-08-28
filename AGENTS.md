@@ -27,6 +27,10 @@
   keeps its bridge dependency private to the Swift implementation target. A
   native change must publish and verify a new immutable archive before updating
   its URL and checksum together.
+- Native artifacts built from this revision embed the project license and the
+  generated third-party notices before signing. The immutable `binary-0.1.3`
+  archive is not rewritten; publish a new native archive before claiming those
+  resources are present in the package's remote binary.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 
@@ -59,9 +63,9 @@
 
 ## Reproducibility and artifacts
 
-- Treat the upstream revision, Rust toolchain, `Cargo.lock`, snapshots,
-  licenses, XCFramework, and checksum as one intentional upgrade unit. Do not
-  change one incidentally.
+- Treat the upstream revision, Rust toolchain, `Cargo.lock`, license policy,
+  generated notices, snapshots, XCFramework, and checksum as one intentional
+  upgrade unit. Do not change one incidentally.
 - Clean Rust builds resolve the locked dependency graph from crates.io. Tests
   themselves must not access network resources at runtime.
 - Derive native libraries and Apple framework linker settings from the release
@@ -75,9 +79,13 @@
   toolchain. Run Swift checks from the repository root.
 - Keep Swift sources and the manifest clean under
   `swift format lint --strict --recursive Package.swift Sources Tests`.
-- Use focused checks while iterating, then run the applicable `Justfile` CI and
-  artifact recipes. Do not add no-op scripts or placeholder artifacts merely
-  to make that list appear green.
+- Use focused checks while iterating, then run `just final-check` before handing
+  off a completed change. It composes workflow linting, diff validation, and
+  the Rust and Swift CI recipes. Do not add no-op scripts or placeholder
+  artifacts merely to make that list appear green.
+- Run `just update-licenses` after an intentional native dependency change and
+  `just check-licenses` to prove the committed notices still match the locked
+  Apple Silicon release graph.
 - Replace the bootstrap import test with behavioral tests as the public
   interface is implemented.
 - Never report an unrun check as passing. Record the exact command, result, and
@@ -85,7 +93,8 @@
 
 ## Documentation and completion
 
-- Keep implementation, the architecture overview, README, notices, and examples
-  consistent. A user-approved contract change updates them together.
+- Keep implementation, the architecture overview, README, project license,
+  third-party notices, and examples consistent. A user-approved contract
+  change updates them together.
 - Report actual artifact architecture, checksum, linker settings, verifier
   results, and remaining gaps; do not claim completion early.

@@ -52,6 +52,7 @@ Conversion itself is local and in-process. It does not make network requests.
 | [`Native/include/`](../Native/include/) | Defines the versioned C ABI header used by Swift. |
 | [`Native/framework/`](../Native/framework/) | Defines the framework module, bundle metadata, and exact exported-symbol list. |
 | [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Implements the C ABI, owns native result memory, and calls the pinned AnyDoc engine. |
+| [`THIRD_PARTY_NOTICES.txt`](../THIRD_PARTY_NOTICES.txt) | Records the licenses and attribution notices for the locked native release graph. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, concurrency, cancellation, error mapping, ABI validation, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded documents used for real conversions. |
 | [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains small C and Swift consumers used to validate the packaged framework. |
@@ -249,14 +250,18 @@ For native development, `just artifact` performs the reproducible path:
 
 1. build the Rust `staticlib` for `aarch64-apple-darwin` with the pinned Rust
    toolchain and macOS 13 deployment target as an internal intermediate;
-2. use Cargo's reported native link requirements to link that archive into a
+2. verify that the committed third-party notices match the target-filtered,
+   locked Cargo graph;
+3. use Cargo's reported native link requirements to link that archive into a
    versioned, non-mergeable dynamic framework with a controlled `@rpath`
    install name and exactly eight exported C symbols;
-3. package the framework as an XCFramework ZIP and compute its SwiftPM
+4. copy the project license and third-party notices into the framework before
+   signing it;
+5. package the framework as an XCFramework ZIP and compute its SwiftPM
    checksum; and
-4. reopen and validate the package, including its platform, architecture,
+6. reopen and validate the package, including its platform, architecture,
    Mach-O type, install name, dependencies, bundle structure, signature,
-   exported ABI, and C and Swift smoke consumers.
+   license resources, exported ABI, and C and Swift smoke consumers.
 
 The ignored output is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`. The local Swift recipes
@@ -279,7 +284,8 @@ released. The workflows refuse to replace existing tags or releases.
 ## Development and verification
 
 Install the pinned Rust toolchain, Swift 6.1 or later, Xcode command-line tools,
-and [`just`](https://github.com/casey/just). From the repository root:
+[`just`](https://github.com/casey/just), `jq`, `actionlint`, and
+`cargo-about 0.9.1`. From the repository root:
 
 ```sh
 # Show every supported task.
@@ -294,6 +300,13 @@ just ci-swift
 # Run both suites.
 just ci
 
+# Run workflow and diff linting followed by every Rust and Swift CI check.
+just final-check
+
+# Regenerate or verify the committed notices for the locked native graph.
+just update-licenses
+just check-licenses
+
 # Only build, package, and verify the native release archive.
 just artifact
 ```
@@ -307,7 +320,8 @@ The tests are organized around the seams they protect:
 - Public actor tests cover normalization, limits, FIFO execution, independent
   concurrency, main-actor responsiveness, and cancellation at each stage.
 - Artifact smoke tests prove that packaged C and Swift consumers can link and
-  run without Cargo on `PATH`.
+  run without Cargo on `PATH`; artifact and Xcode-package verification also
+  prove that the project license and third-party notices survive packaging.
 - The Rust composition smoke links a test-only Rust static library beside the
   dynamic bridge and proves that both unwind runtimes coexist without a symbol
   collision.
@@ -333,8 +347,8 @@ The module stays small by keeping each behavior at one owning seam:
 - An ABI change must update the C header, Rust exports, Swift adapter, ABI
   version, smoke tests, and native binary release as one unit.
 - An AnyDoc upgrade must update the exact Cargo dependency, lockfile, embedded
-  version and revision, fixture expectations, and released XCFramework
-  intentionally.
+  version and revision, fixture expectations, generated third-party notices,
+  and released XCFramework intentionally.
 - Linker settings must come from the built artifact rather than assumptions
   about a developer machine.
 

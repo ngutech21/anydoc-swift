@@ -1,0 +1,14 @@
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+targets = ["aarch64-apple-darwin"]
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false
+workarounds = ["chrono", "cocoa"]
+private = { ignore = true }

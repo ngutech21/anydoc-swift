@@ -21,6 +21,7 @@ toolchain.
 - macOS 13 or later on Apple Silicon
 - Swift 6.1 or later
 - Rust 1.98.0 when rebuilding the native bridge
+- `just`, `jq`, `actionlint`, and `cargo-about 0.9.1` for contributor validation
 
 ## Installation
 
@@ -97,15 +98,17 @@ Plain `swift build` and `swift test` resolve the published, checksum-pinned
 also build and verify the local dynamic framework before selecting that
 XCFramework through the same private SwiftPM binary-target seam.
 
-Run the same complete validation used by GitHub Actions with:
+Run every local validation gate, including GitHub Actions linting, diff
+whitespace checks, and the Rust and Swift CI suites, with:
+
+```sh
+just final-check
+```
+
+The combined CI suite and its Rust and Swift parts remain available separately:
 
 ```sh
 just ci
-```
-
-The Rust and Swift suites can run independently:
-
-```sh
 just ci-rust
 just ci-swift
 ```
@@ -130,3 +133,18 @@ consumer process.
 
 Consuming applications do not require Rust or Cargo. SwiftPM downloads and
 verifies the released XCFramework through the package manifest.
+
+## Licensing
+
+AnyDocSwift is distributed under the [`LICENSE`](LICENSE) in this repository.
+The native bridge also incorporates third-party Rust crates whose exact
+licenses and attribution notices are recorded in
+[`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt).
+
+Artifacts built from this revision embed both files in the signed framework's
+`Resources` directory. Distributors must retain those resources when copying or
+embedding the framework. Maintainers can regenerate the notice file with
+`just update-licenses`; `just check-licenses` and CI reject dependency or
+license drift. The currently pinned immutable `binary-0.1.3` archive is not
+rewritten; a newly published native archive and checksum are required before a
+later Swift package release can include these resources.

@@ -1,0 +1,27 @@
+THIRD-PARTY SOFTWARE NOTICES
+============================
+
+AnyDocSwiftBridge incorporates the third-party software listed below.
+Each component remains subject to its own license terms.
+
+COMPONENTS
+----------
+{{#each crates}}
+{{package.name}} {{package.version}}
+Source: {{#if package.repository}}{{{package.repository}}}{{else}}https://crates.io/crates/{{package.name}}{{/if}}
+Declared license: {{{license}}}
+
+{{/each}}
+LICENSE TEXTS
+-------------
+{{#each licenses}}
+===============================================================================
+{{name}} ({{id}})
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

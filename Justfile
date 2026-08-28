@@ -20,6 +20,14 @@ native_static_libs_log := root + "/.build/artifact/native-static-libs.log"
 framework_info_plist := root + "/Native/framework/Info.plist"
 framework_modulemap := root + "/Native/framework/module.modulemap"
 framework_exports := root + "/Native/framework/exported_symbols.txt"
+project_license := root + "/LICENSE"
+third_party_notices := root + "/THIRD_PARTY_NOTICES.txt"
+cargo_about_version := "0.9.1"
+license_config := crate + "/about.toml"
+license_template := crate + "/third-party-notices.hbs"
+license_build_root := root + "/.build/licenses"
+generated_notices := license_build_root + "/THIRD_PARTY_NOTICES.txt"
+license_metadata := license_build_root + "/licenses.json"
 verify_root := root + "/.build/artifact/verified"
 verified_xcframework := verify_root + "/AnyDocSwiftBridge.xcframework"
 verified_slice := verified_xcframework + "/macos-arm64"
@@ -32,6 +40,7 @@ verified_resources := verified_framework_version_root + "/Resources"
 composition_probe_library := verify_root + "/librust_staticlib_probe.a"
 swift_scratch := root + "/.build/swift"
 xcode_scratch := root + "/.build/xcode-package-smoke"
+xcode_product_framework := xcode_scratch + "/Build/Products/Debug/" + framework_name + ".framework"
 
 default:
     @just --list
@@ -50,15 +59,36 @@ build-rust:
 test-rust:
     cd "{{ crate }}" && cargo test --locked
 
+# Generate the canonical third-party notices from the locked release graph.
+update-licenses:
+    mkdir -p "{{ license_build_root }}"
+    just _generate-licenses "{{ third_party_notices }}" "{{ license_metadata }}"
+
+# Verify that the committed third-party notices match the locked release graph.
+check-licenses:
+    mkdir -p "{{ license_build_root }}"
+    rm -f "{{ generated_notices }}" "{{ license_metadata }}"
+    just _generate-licenses "{{ generated_notices }}" "{{ license_metadata }}"
+    cmp "{{ third_party_notices }}" "{{ generated_notices }}"
+
+[private]
+_generate-licenses output metadata:
+    test "$(cargo about --version)" = "cargo-about {{ cargo_about_version }}"
+    cd "{{ crate }}" && cargo about generate --config "{{ license_config }}" --manifest-path Cargo.toml --locked --fail --format json --output-file "{{ metadata }}"
+    test -s "{{ metadata }}"
+    upstream_notices="$(jq -r '.crates[].package.manifest_path' "{{ metadata }}" | while IFS= read -r manifest; do find "$(dirname "$manifest")" -maxdepth 1 -iname 'NOTICE*' -print; done | LC_ALL=C sort -u)"; if [[ -n "$upstream_notices" ]]; then printf 'Unhandled upstream NOTICE files:\n%s\n' "$upstream_notices" >&2; exit 1; fi
+    cd "{{ crate }}" && cargo about generate --config "{{ license_config }}" --manifest-path Cargo.toml --locked --fail --output-file "{{ output }}" "{{ license_template }}"
+    test -s "{{ output }}"
+
 # Run every Rust check used by continuous integration.
-ci-rust: lint-rust build-rust test-rust
+ci-rust: lint-rust build-rust test-rust check-licenses
 
 # Check Swift formatting without modifying sources.
 lint-swift:
     xcrun swift format lint --strict --recursive Package.swift Sources Tests
 
 # Build and package the release XCFramework with the standard Cargo and Xcode tools.
-build-artifact:
+build-artifact: check-licenses
     test "$(uname -m)" = "arm64"
     mkdir -p "{{ cargo_target }}" "$(dirname "{{ artifact_archive }}")"
     rm -rf "{{ framework }}" "{{ xcframework }}" "{{ artifact_archive }}" "{{ native_static_libs_log }}"
@@ -70,6 +100,8 @@ build-artifact:
     cp "{{ root }}/Native/include/anydoc_swift_bridge.h" "{{ framework_version_root }}/Headers/anydoc_swift_bridge.h"
     cp "{{ framework_modulemap }}" "{{ framework_version_root }}/Modules/module.modulemap"
     cp "{{ framework_info_plist }}" "{{ framework_version_root }}/Resources/Info.plist"
+    cp "{{ project_license }}" "{{ framework_version_root }}/Resources/LICENSE.txt"
+    cp "{{ third_party_notices }}" "{{ framework_version_root }}/Resources/ThirdPartyNotices.txt"
     native_link_flags="$(sed -n 's/^note: native-static-libs: //p' "{{ native_static_libs_log }}" | tail -n 1)"; test -n "$native_link_flags"; read -r -a native_link_arguments <<< "$native_link_flags"; xcrun clang -dynamiclib -arch arm64 -mmacosx-version-min={{ deployment_target }} -Wl,-force_load,"{{ artifact_library }}" -Wl,-exported_symbols_list,"{{ framework_exports }}" -Wl,-install_name,"{{ framework_install_name }}" -Wl,-compatibility_version,"{{ framework_link_version }}" -Wl,-current_version,"{{ framework_link_version }}" "${native_link_arguments[@]}" -o "{{ framework_binary }}"
     ln -s "{{ framework_version_directory }}" "{{ framework }}/Versions/Current"
     ln -s "Versions/Current/{{ framework_name }}" "{{ framework }}/{{ framework_name }}"
@@ -115,6 +147,8 @@ verify-artifact archive=artifact_archive:
     cmp "{{ root }}/Native/include/anydoc_swift_bridge.h" "{{ verified_headers }}/anydoc_swift_bridge.h"
     cmp "{{ framework_modulemap }}" "{{ verified_modules }}/module.modulemap"
     cmp "{{ framework_info_plist }}" "{{ verified_resources }}/Info.plist"
+    cmp "{{ project_license }}" "{{ verified_resources }}/LICENSE.txt"
+    cmp "{{ third_party_notices }}" "{{ verified_resources }}/ThirdPartyNotices.txt"
     /usr/bin/plutil -lint "{{ verified_resources }}/Info.plist"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "{{ verified_resources }}/Info.plist")" = "{{ framework_name }}"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "{{ verified_resources }}/Info.plist")" = "{{ framework_bundle_identifier }}"
@@ -152,9 +186,11 @@ test-swift: artifact
 verify-xcode-package: verify-artifact
     rm -rf "{{ xcode_scratch }}"
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcodebuild -quiet -scheme AnyDocSwift -destination 'generic/platform=macOS' -derivedDataPath "{{ xcode_scratch }}" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
-    test -d "{{ xcode_scratch }}/Build/Products/Debug/{{ framework_name }}.framework"
+    test -d "{{ xcode_product_framework }}"
     test ! -e "{{ xcode_scratch }}/Build/Products/Debug/include/module.modulemap"
-    codesign --verify --deep --strict --verbose=2 "{{ xcode_scratch }}/Build/Products/Debug/{{ framework_name }}.framework"
+    cmp "{{ project_license }}" "{{ xcode_product_framework }}/Versions/{{ framework_version_directory }}/Resources/LICENSE.txt"
+    cmp "{{ third_party_notices }}" "{{ xcode_product_framework }}/Versions/{{ framework_version_directory }}/Resources/ThirdPartyNotices.txt"
+    codesign --verify --deep --strict --verbose=2 "{{ xcode_product_framework }}"
 
 # Build, package, and verify the native release artifact.
 artifact: build-artifact verify-artifact verify-rust-composition verify-xcode-package
@@ -164,3 +200,8 @@ ci-swift: lint-swift build-swift test-swift
 
 # Run all continuous-integration checks locally.
 ci: ci-rust ci-swift
+
+# Run every local validation gate before submitting a change.
+final-check:
+    actionlint
+    just ci
