@@ -47,7 +47,7 @@ Conversion itself is local and in-process. It does not make network requests.
 
 | Path | Responsibility |
 | --- | --- |
-| [`Package.swift`](../Package.swift) | Declares the public Swift library, private binary dependency, supported platform, and native linker settings. |
+| [`Package.swift`](../Package.swift) | Declares the public Swift library, private binary dependency, and supported platform. |
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Contains the public actor and error type plus the private Swift-to-C adapter. |
 | [`Native/include/`](../Native/include/) | Defines the versioned C ABI header used by Swift. |
 | [`Native/framework/`](../Native/framework/) | Defines the framework module, bundle metadata, and exact exported-symbol list. |
@@ -263,9 +263,8 @@ The ignored output is
 set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`, which selects the verified local
 XCFramework through the same private binary-target seam used by the remote
 release; that switch is for repository validation, not for package consumers.
-In this mode the bridge owns its `CoreFoundation` and `iconv` dependencies. The
-manifest retains those linker settings only for the currently published static
-artifact until its pin advances to the new dynamic binary release.
+The bridge owns its `CoreFoundation` and `iconv` dependencies, so the consumer
+Swift target does not declare native system linker settings.
 
 Native releases and Swift package releases are intentionally separate:
 

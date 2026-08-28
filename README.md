@@ -31,7 +31,7 @@ Add AnyDocSwift to your Swift package dependencies and include the
 dependencies: [
   .package(
     url: "https://github.com/ngutech21/anydoc-swift.git",
-    exact: "0.1.2"
+    exact: "0.1.3"
   )
 ],
 targets: [
@@ -45,7 +45,7 @@ targets: [
 ```
 
 In Xcode, choose **File > Add Package Dependencies**, enter
-`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.2`, and
+`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.3`, and
 add the `AnyDocSwift` library to your application target.
 
 SwiftPM downloads the checksum-pinned native artifact automatically. Consumer

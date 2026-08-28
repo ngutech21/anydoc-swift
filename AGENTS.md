@@ -23,10 +23,10 @@
   builds require neither Cargo nor a locally built Rust library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` pins the `binary-0.1.2` release archive and keeps its bridge
-  dependency private to the Swift implementation target. A native change must
-  publish and verify a new immutable archive before updating its URL and
-  checksum together.
+- `Package.swift` pins the `binary-0.1.3` dynamic-framework release archive and
+  keeps its bridge dependency private to the Swift implementation target. A
+  native change must publish and verify a new immutable archive before updating
+  its URL and checksum together.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 

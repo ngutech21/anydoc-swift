@@ -14,8 +14,8 @@ let bridgeTarget: Target =
   : .binaryTarget(
     name: "AnyDocSwiftBridge",
     url:
-      "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.2/AnyDocSwiftBridge.xcframework.zip",
-    checksum: "b24ec29d9b468b1ee2cbae6626a0bc8ca0d8136e6ea3aac4eb148d16721f0b76"
+      "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.3/AnyDocSwiftBridge.xcframework.zip",
+    checksum: "c706e21d73c93808e259c4778fb694f40dd84b0aa59c5f756c45567f585d993a"
   )
 
 let package = Package(
@@ -32,13 +32,7 @@ let package = Package(
   targets: [
     .target(
       name: "AnyDocSwift",
-      dependencies: ["AnyDocSwiftBridge"],
-      linkerSettings: useLocallyBuiltBridge
-        ? []
-        : [
-          .linkedFramework("CoreFoundation"),
-          .linkedLibrary("iconv"),
-        ]
+      dependencies: ["AnyDocSwiftBridge"]
     ),
     bridgeTarget,
     .testTarget(
