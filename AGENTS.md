@@ -3,10 +3,13 @@
 ## Authority
 
 - These instructions apply to the whole repository.
-- [`docs/spec.md`](docs/spec.md) explains the current architecture, runtime
-  behavior, repository layout, and release flow. Read the relevant section
-  before changing code and verify exact contracts against the implementation
-  and tests; do not duplicate that guide here.
+- [`docs/architecture.md`](docs/architecture.md) explains the current
+  architecture, runtime behavior, repository layout, and invariants.
+  [`CONTRIBUTING.md`](CONTRIBUTING.md) explains local setup, verification,
+  and artifact generation. [`docs/releasing.md`](docs/releasing.md) contains the
+  maintainer-only release flow. Read the relevant sections before changing code
+  and verify exact contracts against the implementation and tests; do not
+  duplicate those guides here.
 - If the overview, pinned upstream source, implementation, or tests conflict,
   stop and surface the conflict. Do not guess, silently weaken a requirement,
   or use the latest upstream branch as authority.
@@ -23,14 +26,14 @@
   builds require neither Cargo nor a locally built Rust library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` pins the `binary-0.1.3` dynamic-framework release archive and
+- `Package.swift` pins the `binary-0.1.4` dynamic-framework release archive and
   keeps its bridge dependency private to the Swift implementation target. A
   native change must publish and verify a new immutable archive before updating
   its URL and checksum together.
 - Native artifacts built from this revision embed the project license and the
-  generated third-party notices before signing. The immutable `binary-0.1.3`
-  archive is not rewritten; publish a new native archive before claiming those
-  resources are present in the package's remote binary.
+  generated third-party notices before signing. The immutable `binary-0.1.4`
+  archive contains those resources and is not rewritten; publish a new native
+  archive for any future resource change.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 
@@ -42,7 +45,7 @@
 - Keep the Swift-to-C adapter private. C and Rust declarations must not appear
   in the generated Swift interface.
 - Put behavior at the seam that owns it. Follow the responsibility split in
-  the overview instead of spreading normalization, scheduling, error
+  the architecture guide instead of spreading normalization, scheduling, error
   translation, detection, or ownership rules across layers.
 - Internal seams are allowed only for real variation or deterministic fault
   injection. Do not introduce pass-through wrappers or public test hooks.

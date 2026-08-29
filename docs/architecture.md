@@ -1,12 +1,14 @@
-# How AnyDocSwift Works
+# AnyDocSwift Architecture
 
 AnyDocSwift is a macOS Swift package that converts document bytes into
 GitHub-Flavored Markdown. It wraps the Rust
 [`anydoc`](https://github.com/firecrawl/anydoc) engine without exposing Rust or
 C types to applications.
 
-This document is the architectural guide to the repository. For installation
-and a minimal example, start with the [README](../README.md).
+For installation and usage, start with the [README](../README.md). For local
+setup, validation, and artifact generation, see
+[CONTRIBUTING](../CONTRIBUTING.md). Maintainer release procedures are documented
+in [Releasing AnyDocSwift](releasing.md).
 
 ## At a glance
 
@@ -59,6 +61,8 @@ Conversion itself is local and in-process. It does not make network requests.
 | [`Examples/AnyDocSwiftExample/`](../Examples/AnyDocSwiftExample/) | Demonstrates a complete command-line consumer. |
 | [`Justfile`](../Justfile) | Provides the supported build, test, packaging, and verification entry points. |
 | [`.github/workflows/`](../.github/workflows/) | Runs CI and the separate native-binary and Swift-package release processes. |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Documents contributor setup, validation, and local artifact generation. |
+| [`docs/releasing.md`](releasing.md) | Documents the maintainer-only binary and Swift package release procedures. |
 | [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler, components, and Apple Silicon target used for the bridge. |
 
 SwiftPM is the root project. There is intentionally no root Xcode project.
@@ -163,22 +167,15 @@ One call to `markdown(from:fileExtension:)` follows this sequence:
 This split keeps policy that matters to Swift callers in Swift, parsing in
 AnyDoc, and pointer ownership at the FFI seam.
 
-## Behavior applications should account for
+## Application-visible behavior
 
 ### Format detection
 
 Content detection is authoritative. The extension is a hint for formats that
 cannot be identified reliably from bytes; CSV specifically requires the `csv`
 hint. The hint is trimmed, one leading period is removed, and the result is
-lowercased before it reaches the bridge.
-
-Supported hints are:
-
-- Word: `doc`, `docx`, `docm`
-- PowerPoint: `ppt`, `pps`, `pot`, `pptx`, `pptm`, `ppsx`, `ppsm`
-- Excel: `xls`, `xlsx`, `xlsm`, `xlsb`
-- OpenDocument: `odt`, `ods`, `odp`
-- Other: `rtf`, `epub`, `csv`, `pdf`
+lowercased before it reaches the bridge. The supported formats and extensions
+are listed in the [README](../README.md#supported-formats).
 
 The API returns Markdown only. It does not expose AnyDoc's internal document
 model or extract embedded assets.
@@ -243,7 +240,7 @@ currently works on complete in-memory documents and does not provide:
 - persistence or caching; or
 - embedded asset extraction.
 
-## Binary packaging
+## Binary distribution model
 
 [`Package.swift`](../Package.swift) exposes the `AnyDocSwift` library and keeps
 `AnyDocSwiftBridge` private to its implementation target. The bridge is a
@@ -251,30 +248,10 @@ remote binary target whose release URL and SHA-256 checksum are pinned together.
 SwiftPM downloads and verifies that archive for ordinary `swift build` and
 `swift test` commands.
 
-For native development, `just artifact` performs the reproducible path:
-
-1. build the Rust `staticlib` for `aarch64-apple-darwin` with the pinned Rust
-   toolchain and macOS 13 deployment target as an internal intermediate;
-2. verify that the committed third-party notices match the target-filtered,
-   locked Cargo graph;
-3. use Cargo's reported native link requirements to link that archive into a
-   versioned, non-mergeable dynamic framework with a controlled `@rpath`
-   install name and exactly eight exported C symbols;
-4. copy the project license and third-party notices into the framework before
-   signing it;
-5. package the framework as an XCFramework ZIP and compute its SwiftPM
-   checksum; and
-6. reopen and validate the package, including its platform, architecture,
-   Mach-O type, install name, dependencies, bundle structure, signature,
-   license resources, exported ABI, and C and Swift smoke consumers.
-
-The ignored output is
-`.build/artifacts/AnyDocSwiftBridge.xcframework.zip`. The local Swift recipes
-set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`, which selects the verified local
-XCFramework through the same private binary-target seam used by the remote
-release; that switch is for repository validation, not for package consumers.
-The bridge owns its `CoreFoundation` and `iconv` dependencies, so the consumer
-Swift target does not declare native system linker settings.
+Local native development selects a verified XCFramework through the same
+private binary-target seam used by the remote release. The bridge owns its
+`CoreFoundation` and `iconv` dependencies, so the consumer Swift target does
+not declare native system linker settings.
 
 Native releases and Swift package releases are intentionally separate:
 
@@ -284,75 +261,21 @@ Native releases and Swift package releases are intentionally separate:
 
 A native change is released first under a new `binary-` tag. The manifest is
 then updated to that immutable asset and checksum before the Swift package is
-released. The workflows refuse to replace existing tags or releases.
+released. The workflows refuse to replace existing tags or releases. Local
+artifact procedures live in [CONTRIBUTING](../CONTRIBUTING.md#native-artifacts),
+and publishing procedures live in [Releasing AnyDocSwift](releasing.md).
 
-## Development and verification
-
-Install the pinned Rust toolchain, Swift 6.1 or later, Xcode command-line tools,
-[`just`](https://github.com/casey/just), `jq`, `actionlint`, and
-`cargo-about 0.9.1`. From the repository root:
-
-```sh
-# Show every supported task.
-just --list
-
-# Run Rust formatting, linting, builds, and tests.
-just ci-rust
-
-# Build and verify a local XCFramework, lint and build Swift, and run Swift tests.
-just ci-swift
-
-# Run both suites.
-just ci
-
-# Run workflow and diff linting followed by every Rust and Swift CI check.
-just final-check
-
-# Regenerate or verify the committed notices for the locked native graph.
-just update-licenses
-just check-licenses
-
-# Only build, package, and verify the native release archive.
-just artifact
-```
-
-The tests are organized around the seams they protect:
-
-- Rust tests cover raw-buffer validation, detection, limits, error codes,
-  result invariants, panic containment, and the exported ABI.
-- Swift adapter tests cover ABI and UTF-8 validation, error translation,
-  output bounds, malformed native results, and result cleanup.
-- Public actor tests cover normalization, limits, FIFO execution, independent
-  concurrency, main-actor responsiveness, and cancellation at each stage.
-- Artifact smoke tests prove that packaged C and Swift consumers can link and
-  run without Cargo on `PATH`; artifact and Xcode-package verification also
-  prove that the project license and third-party notices survive packaging.
-- The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
-  its named framework product rather than a shared `include/module.modulemap`
-  output.
-- Real RTF and CSV fixtures exercise the pinned AnyDoc engine. Their provenance
-  and hashes are recorded in [`Tests/Fixtures/README.md`](../Tests/Fixtures/README.md).
-
-Tests themselves do not access the network. A clean Cargo build may need
-network access once to resolve the locked crates.io dependency graph.
-
-## Making changes safely
+## Ownership boundaries and invariants
 
 The module stays small by keeping each behavior at one owning seam:
 
-- Public behavior, scheduling, or cancellation changes belong in
-  `AnyDocConverter.swift` with public actor tests.
-- Error presentation changes belong in `AnyDocConversionError.swift`; native
-  code mapping stays in `AnyDocCAdapter.swift`.
-- Pointer, result-ownership, detection, or AnyDoc integration changes belong in
-  the Rust bridge and require focused Rust and adapter tests.
-- An ABI change must update the C header, Rust exports, Swift adapter, ABI
-  version, smoke tests, and native binary release as one unit.
-- An AnyDoc upgrade must update the exact Cargo dependency, lockfile, embedded
-  version and revision, fixture expectations, generated third-party notices,
-  and released XCFramework intentionally.
-- Linker settings must come from the built artifact rather than assumptions
-  about a developer machine.
+- Public behavior, scheduling, and cancellation belong to
+  `AnyDocConverter.swift`.
+- Error presentation belongs to `AnyDocConversionError.swift`; native code
+  mapping remains in `AnyDocCAdapter.swift`.
+- Pointer and result ownership belong to the private Swift adapter and C ABI.
+- Detection and AnyDoc integration belong to the Rust bridge.
+- Binary selection and dependency visibility belong to `Package.swift`.
 
 The core invariants are that native work never blocks the main actor, C and Rust
 types remain private, buffers never outlive their Rust owner, a panic never
