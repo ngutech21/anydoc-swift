@@ -14,6 +14,10 @@ Read the relevant sections before making changes and follow their requirements:
   and dependency or ABI changes.
 - [docs/releasing.md](docs/releasing.md): release authorization, publishing
   sequence, and artifact immutability.
+- [docs/ios-required-reason-audit.md](docs/ios-required-reason-audit.md): the
+  blocking iOS privacy audit. Keep it a hard failure until the native call
+  paths are removed or have accurate approved reasons; do not invent a reason
+  or add an empty privacy manifest.
 
 Keep release status, version numbers, architecture explanations, and command
 recipes in those documents rather than repeating them here. Verify contracts

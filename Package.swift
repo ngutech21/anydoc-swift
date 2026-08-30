@@ -66,7 +66,8 @@ let swiftSettings: [SwiftSetting] = [
 let package = Package(
   name: "AnyDocSwift",
   platforms: [
-    .macOS(.v13)
+    .macOS(.v13),
+    .iOS(.v17),
   ],
   products: [
     .library(
@@ -85,6 +86,10 @@ let package = Package(
     .testTarget(
       name: "AnyDocSwiftTests",
       dependencies: ["AnyDocSwift"],
+      path: "Tests",
+      exclude: ["ArtifactSmoke", "LinuxRustComposition", "MemoryProbe", "PublicConsumerSmoke"],
+      sources: ["AnyDocSwiftTests"],
+      resources: [.copy("Fixtures")],
       swiftSettings: swiftSettings
     ),
   ]

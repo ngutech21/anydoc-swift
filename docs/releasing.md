@@ -39,7 +39,8 @@ supported platform before publication.
   draft-asset downloads use `contents: write`. The binary workflow otherwise
   defaults to `contents: read`.
 - Build and verify on native macOS arm64, GNU/Linux x86_64, and GNU/Linux
-  aarch64 hosts. Native cross-compilation is unsupported.
+  aarch64 hosts. The macOS host also cross-builds the two arm64 iOS variants;
+  Linux artifacts require matching native hosts.
 
 ## Release checklist
 
@@ -68,6 +69,11 @@ README and compatibility record, not the architecture guide or `AGENTS.md`.
 Run `just final-check` from the repository root and resolve failures before
 starting publication.
 
+For iOS, keep the required-reason audit a hard failure until its concrete native
+call paths are removed or have accurate approved reasons. Do not add an empty
+privacy manifest or invent a reason. See the
+[iOS required-reason audit](ios-required-reason-audit.md).
+
 ### 2. Publish and verify new native artifacts, when needed
 
 With explicit maintainer authorization, run
@@ -79,7 +85,9 @@ The workflow builds and checks all three native artifacts before creating a
 tag and draft release. It then downloads each draft asset on its native
 architecture, checks its bytes and SHA-256 checksum against the original build,
 and repeats artifact verification. Linux also repeats Swift builds, tests, and
-Rust-runtime coexistence checks against the downloaded artifact.
+Rust-runtime coexistence checks against the downloaded artifact. The Apple
+archive is also rechecked for all three slices, generic Xcode destinations,
+physical-device linkage, simulator execution, and required-reason imports.
 
 The macOS artifact is built with Xcode 27.0 / Swift 6.4. Downloaded macOS
 artifacts are verified with both Xcode 27.0 / Swift 6.4 and Xcode 26.2 / Swift
@@ -102,7 +110,7 @@ do not rediscover a draft by assuming it appears in the public release list.
 In one change, update [Package.swift](../Package.swift) with all three URLs
 from the chosen `binary-X.Y.Z` release and their verified checksums:
 
-- the macOS XCFramework for macOS arm64;
+- the three-slice XCFramework for macOS arm64, iOS arm64, and arm64 Simulator;
 - the x86_64 artifact bundle for GNU/Linux x86_64; and
 - the aarch64 artifact bundle for GNU/Linux aarch64.
 
@@ -130,9 +138,12 @@ swift build -c release
 swift test
 ```
 
-On macOS, the workflow invokes Swift through `xcrun`; Linux uses its pinned
-Swift container. These checks must download the published native artifacts
-selected by the candidate manifest. They run before the Swift tag exists.
+On macOS, run `just verify-published-package`. It performs the Swift checks
+above through `xcrun`, builds generic macOS/device/simulator destinations,
+final-links the public iOS-device consumer, and runs the complete test target
+on a temporary arm64 iPhone Simulator. Linux uses its pinned Swift container.
+These checks must download the published native artifacts selected by the
+candidate manifest. They run before the Swift tag exists.
 
 Record the candidate commit, platform, architecture, archive URL, checksum,
 exact commands, and results. Keep the candidate's native contract and test
@@ -158,6 +169,7 @@ After the workflow succeeds:
 - Add the released package's engine, ABI, and export information to the
   compatibility record below.
 - Remove any pending-release wording for the functionality just published.
+- Close the iOS support issue only after the published-package gates pass.
 - Retain links to both workflow runs and their verification evidence.
 
 ## Compatibility record

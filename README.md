@@ -25,6 +25,12 @@ This independent community project is not affiliated with, endorsed by, or maint
 - macOS 13 or later on Apple Silicon, or GNU/Linux on `x86_64` or `aarch64`
   with glibc 2.26 or later
 
+The source tree also contains unreleased support for iOS 17 or later on arm64
+devices and Apple-Silicon simulators. The current `0.2.2` package uses
+`binary-0.2.0`, whose Apple archive is macOS-only. iOS requires a new verified
+native release and a Swift package that pins it; the
+[required-reason audit](docs/ios-required-reason-audit.md) remains a release blocker.
+
 ## Installation
 
 Add AnyDocSwift to your package dependencies and to the target that uses it.

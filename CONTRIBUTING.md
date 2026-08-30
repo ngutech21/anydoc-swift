@@ -13,7 +13,9 @@ surface the conflict instead of guessing or silently weakening a requirement.
 ## Development requirements
 
 Development and native artifact verification require either Apple Silicon with
-macOS 13 or later, or a native `x86_64`/`aarch64` GNU/Linux host. Install:
+macOS 13 or later, or a native `x86_64`/`aarch64` GNU/Linux host. The iOS
+gate runs on Apple Silicon and requires an installed iOS Simulator runtime
+supporting the iPhone 16e device type. Install:
 
 - Swift 6.2 or later and, on macOS, the Xcode command-line tools;
 - the toolchain pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
@@ -137,9 +139,15 @@ Tests are organized around the seams they protect:
 - A generated Linux SwiftPM consumer links AnyDocSwift with a second
   unwind-enabled Rust static library and performs a real conversion, proving
   that the two module maps and Rust runtimes do not collide.
-- The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
-  its named framework product rather than a shared `include/module.modulemap`
-  output.
+- Xcode package smokes build generic macOS, iOS-device, and iOS-simulator
+  destinations and prove that `ProcessXCFramework` selects the matching slice,
+  preserves its signature and resources, and places the bridge in its named
+  framework product rather than a shared `include/module.modulemap` output.
+  A public Swift consumer is final-linked for a physical arm64 iOS device.
+- The complete Swift test target runs on a temporary arm64 iPhone 16e simulator
+  with the newest available installed iOS runtime. The recipe creates, boots,
+  and deletes only that device; no usable runtime is a hard failure. Fixtures
+  are SwiftPM resources loaded through `Bundle.module`.
 - A generated public symbol graph proves that no C/Rust bridge declaration is
   exported by the Swift module.
 - The non-default binary-release qualification builds a public consumer in
@@ -157,28 +165,35 @@ network access once to resolve the locked crates.io dependency graph.
 `just artifact` selects the native packaging and verification path for the
 current host.
 
-### macOS
+### macOS and iOS
 
-`just artifact-macos`:
+`just artifact-macos` runs on macOS and packages all three Apple variants:
 
-1. Build the Rust `staticlib` for `aarch64-apple-darwin` with the pinned Rust
-   toolchain and macOS 13 deployment target as an internal intermediate.
-2. Verify that the committed third-party notices match the target-filtered,
-   locked Cargo graph.
-3. Use Cargo's reported native link requirements to link that archive into a
-   versioned, non-mergeable dynamic framework with a controlled `@rpath`
-   install name and exactly 12 exported C symbols.
-4. Copy the project license and third-party notices into the framework, remove
-   local symbols from the linked binary with `xcrun strip -x`, then sign it.
-   Stripping preserves the exported C ABI but removes internal symbol names
-   used in diagnostics.
-5. Package the framework as an XCFramework ZIP and compute its SwiftPM
+1. Build separate Rust `staticlib` intermediates for `aarch64-apple-darwin`,
+   `aarch64-apple-ios`, and `aarch64-apple-ios-sim` with the pinned toolchain,
+   macOS 13 and iOS 17 deployment targets.
+2. Verify the committed notices against the union of the three target-filtered
+   locked Cargo graphs.
+3. Use each target's Cargo-reported native link requirements to link a versioned
+   macOS framework and flat iOS-device and iOS-simulator frameworks. Each is
+   non-mergeable, has a controlled `@rpath` install name, and exports exactly
+   the 12 ABI-v3 C symbols.
+4. Copy the project license and third-party notices into each framework,
+   preserve macOS local-symbol stripping with `xcrun strip -x`, then ad-hoc sign
+   each variant. The XCFramework container remains unsigned.
+5. Package the three variants into one XCFramework ZIP and compute its SwiftPM
    checksum.
-6. Reopen and validate the package, including its platform, architecture,
-   Mach-O type, install name, dependencies, bundle structure, signature,
-   license resources, exported ABI, and C and Swift smoke consumers.
-7. Link and run it beside an independent unwind-enabled Rust static library,
-   proving that the dynamic framework keeps its Rust runtime isolated.
+6. Reopen and validate every variant's platform, architecture, Mach-O metadata,
+   install name, dependencies, bundle structure, signature, license resources,
+   exported ABI, and Cargo-free C and Swift consumers.
+7. Link and run the macOS variant beside an independent unwind-enabled Rust
+   static library, preserving the Rust-runtime isolation check.
+8. Build generic package destinations, final-link the public device consumer,
+   and run the complete Swift test target on an arm64 iOS Simulator.
+9. Compare final iOS imports with the committed required-reason API list. Any
+   match remains a hard failure until its concrete call paths are removed or
+   have accurate approved reasons. See the
+   [iOS required-reason audit](docs/ios-required-reason-audit.md).
 
 The ignored output is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`.
@@ -263,4 +278,5 @@ intentional upgrade unit.
 
 Run `just update-licenses` after an intentional native dependency change and
 commit the resulting `THIRD_PARTY_NOTICES.txt`. Run `just check-licenses` to
-prove that it still matches the locked native release graph.
+prove that it still matches the union of the locked macOS, iOS-device, and
+iOS-simulator release graphs.

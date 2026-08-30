@@ -152,18 +152,8 @@ jobs:
       - name: Run complete local validation
         run: just final-check
 
-      - name: Test published binary dependency without Cargo
-        run: |
-          xcrun swift package reset
-          consumer_path="/usr/bin:/bin:/usr/sbin:/sbin"
-          export PATH="$consumer_path"
-          if command -v cargo >/dev/null 2>&1; then
-            echo "Cargo must be unavailable during remote-consumer verification" >&2
-            exit 1
-          fi
-          xcrun swift build
-          xcrun swift build -c release
-          xcrun swift test
+      - name: Test published Apple binary dependency without Cargo
+        run: just verify-published-package
 
   verify-linux:
     name: Verify remote consumer / ${{ matrix.target }}
