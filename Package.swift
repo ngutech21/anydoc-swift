@@ -21,7 +21,8 @@ let bridgeTarget: Target =
 let package = Package(
   name: "AnyDocSwift",
   platforms: [
-    .macOS(.v13)
+    .macOS(.v13),
+    .iOS(.v15),
   ],
   products: [
     .library(
@@ -37,7 +38,11 @@ let package = Package(
     bridgeTarget,
     .testTarget(
       name: "AnyDocSwiftTests",
-      dependencies: ["AnyDocSwift"]
+      dependencies: ["AnyDocSwift"],
+      path: "Tests",
+      exclude: ["ArtifactSmoke", "PublicConsumerSmoke"],
+      sources: ["AnyDocSwiftTests"],
+      resources: [.copy("Fixtures")]
     ),
   ]
 )

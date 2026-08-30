@@ -207,7 +207,7 @@ jobs:
           cmp "$ARCHIVE_PATH" "$downloaded_archive"
           actual_checksum="$(swift package compute-checksum "$downloaded_archive")"
           test "$actual_checksum" = "$EXPECTED_CHECKSUM"
-          just verify-artifact "$downloaded_archive"
+          just verify-release-artifact "$downloaded_archive"
 
       - name: Publish immutable release
         env:

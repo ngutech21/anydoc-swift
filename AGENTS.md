@@ -26,14 +26,20 @@
   builds require neither Cargo nor a locally built Rust library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` pins the `binary-0.1.4` dynamic-framework release archive and
-  keeps its bridge dependency private to the Swift implementation target. A
-  native change must publish and verify a new immutable archive before updating
-  its URL and checksum together.
-- Native artifacts built from this revision embed the project license and the
-  generated third-party notices before signing. The immutable `binary-0.1.4`
-  archive contains those resources and is not rewritten; publish a new native
-  archive for any future resource change.
+- `Package.swift` declares macOS 13 and iOS 15 but still pins the
+  `binary-0.1.4` macOS-only release archive during the native-support stage. CI
+  selects the verified local three-slice bridge for iOS checks. Do not claim
+  released iOS support until `binary-0.1.5` is published and its URL and
+  checksum are updated together for Swift package `0.1.5`.
+- Native artifacts built from this revision contain ad-hoc-signed macOS arm64,
+  iOS arm64, and arm64 iOS Simulator dynamic frameworks. Every slice embeds the
+  project license and generated third-party notices before signing; the
+  XCFramework container remains unsigned.
+- The current final iOS binaries import Apple required-reason APIs `_stat` and
+  `_fstat`. The privacy audit must remain a hard failure until the concrete
+  pinned dependency call paths are removed or an accurate approved reason is
+  chosen. See [`docs/ios-required-reason-audit.md`](docs/ios-required-reason-audit.md).
+  Do not add an empty privacy manifest or invent a reason.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 
@@ -88,7 +94,7 @@
   artifacts merely to make that list appear green.
 - Run `just update-licenses` after an intentional native dependency change and
   `just check-licenses` to prove the committed notices still match the locked
-  Apple Silicon release graph.
+  macOS, iOS-device, and iOS-simulator release graph.
 - Replace the bootstrap import test with behavioral tests as the public
   interface is implemented.
 - Never report an unrun check as passing. Record the exact command, result, and
