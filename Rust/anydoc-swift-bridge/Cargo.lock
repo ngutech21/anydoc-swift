@@ -89,9 +89,9 @@ dependencies = [
 
 [[package]]
 name = "anydoc"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cba429594e94170aa99d2e4e0f596719ecc5c5df00269c671bc60c9e08172678"
+checksum = "cf0d78e4cfe3654eb3ea04422ec5a94352000ee56e97902125e68e51f7527062"
 dependencies = [
  "cfb",
  "csv",

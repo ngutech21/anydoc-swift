@@ -42,7 +42,7 @@ undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 
 [dependencies]
-anydoc = "=0.2.3"
+anydoc = "=0.2.4"
 
 [profile.release]
 opt-level = 3
