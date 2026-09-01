@@ -138,9 +138,10 @@ cancellation uses Swift's `CancellationError` instead.
 
 Text-based PDFs can be converted. In the source-built AnyDoc 0.2.4 bridge, an
 image-only, scanned, or mixed PDF with any page requiring OCR fails with
-`AnyDocConversionError.needsOCR`; no partial Markdown is returned. The error
-message is display text and is not parsed for page metadata. OCR itself remains
-outside this package.
+`AnyDocConversionError.needsOCR(pages:pageCount:)`; no partial Markdown is
+returned. `pages` contains sorted, unique, one-based page numbers, while
+`pageCount` is the total PDF page count. This lets callers own the OCR workflow
+without parsing display text; OCR itself remains outside this package.
 
 This behavior is staged for the next native release. `Package.swift` continues
 to pin `binary-0.1.4`, which embeds AnyDoc 0.2.3 and may return Markdown that

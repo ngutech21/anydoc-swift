@@ -6,9 +6,13 @@ use super::{BridgeFailure, INPUT_LIMIT_CODE, OUTPUT_LIMIT_CODE};
 
 impl From<anydoc::ConvertError> for BridgeFailure {
     fn from(error: anydoc::ConvertError) -> Self {
-        let code = error.code().to_owned();
         let message = error.to_string();
-        Self { code, message }
+        match error {
+            anydoc::ConvertError::NeedsOcr { pages, page_count } => {
+                Self::needs_ocr(pages, page_count, message)
+            }
+            error => Self::new(error.code(), message),
+        }
     }
 }
 

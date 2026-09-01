@@ -89,7 +89,7 @@ network access once to resolve the locked crates.io dependency graph.
    locked Cargo graph.
 3. Use Cargo's reported native link requirements to link that archive into a
    versioned, non-mergeable dynamic framework with a controlled `@rpath`
-   install name and exactly eight exported C symbols.
+   install name and exactly nine exported C symbols.
 4. Copy the project license and third-party notices into the framework before
    signing it.
 5. Package the framework as an XCFramework ZIP and compute its SwiftPM

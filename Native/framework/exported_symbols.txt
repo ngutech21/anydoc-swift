@@ -6,3 +6,4 @@ _anydoc_swift_result_error_message
 _anydoc_swift_result_free
 _anydoc_swift_result_is_success
 _anydoc_swift_result_markdown
+_anydoc_swift_result_needs_ocr_pages

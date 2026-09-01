@@ -23,7 +23,7 @@ AnyDocConverter (public Swift actor)
   v
 AnyDocCAdapter (private Swift adapter)
   |
-  | length-delimited buffers through ABI version 1
+  | length-delimited buffers through ABI version 2
   v
 AnyDocSwiftBridge (dynamic framework with a private Rust runtime)
   |
@@ -31,7 +31,7 @@ AnyDocSwiftBridge (dynamic framework with a private Rust runtime)
   v
 AnyDoc 0.2.4 in source-built bridge
   |
-  | UTF-8 Markdown or a stable error code
+  | UTF-8 Markdown or a stable error code with typed metadata
   v
 Application
 ```
@@ -102,10 +102,10 @@ and bridge ABI, which is useful in diagnostics.
 [`AnyDocCAdapter`](../Sources/AnyDocSwift/AnyDocCAdapter.swift) is the ownership
 and validation boundary between safe Swift code and the native interface. It:
 
-- verifies that the packaged bridge implements ABI version 1;
+- verifies that the packaged bridge implements ABI version 2;
 - keeps Swift input buffers alive for the synchronous C call;
 - copies every returned native buffer before its owner is released;
-- validates lengths, result shape, and UTF-8;
+- validates lengths, result shape, UTF-8, and structured OCR page metadata;
 - frees each native result exactly once; and
 - maps stable native error codes to `AnyDocConversionError` cases.
 
@@ -117,8 +117,9 @@ The bridge dependency is an `internal import`, so applications importing
 [`anydoc_swift_bridge.h`](../Native/include/anydoc_swift_bridge.h) is a small,
 handwritten interface based on byte pointers plus explicit lengths. A
 conversion returns one opaque, Rust-owned result handle. Accessor functions
-borrow Markdown or error buffers from that handle, and one Rust-provided free
-function releases the handle and all of its buffers together.
+borrow Markdown, error buffers, or a `uint32_t` OCR page array from that handle,
+and one Rust-provided free function releases the handle and all of its buffers
+together. The OCR accessor also reports the document's total page count.
 
 The ABI also reports its version and the embedded engine version. This lets the
 Swift adapter reject an incompatible or malformed binary instead of making
@@ -160,9 +161,10 @@ One call to `markdown(from:fileExtension:)` follows this sequence:
 4. Rust validates the same boundary again, detects the format from content,
    falls back to the hint when needed, and asks AnyDoc for Markdown.
 5. Rust enforces the output byte limit and returns either Markdown or a stable
-   error code and message in one opaque result.
-6. Swift validates and copies those bytes, translates any error, and frees the
-   Rust result on every exit path.
+   error code and message in one opaque result. A `needsOcr` result also owns
+   the structured page array and total page count supplied by AnyDoc.
+6. Swift validates and copies those values, translates any error, and frees
+   the Rust result on every exit path.
 7. Swift checks cancellation again before returning the Markdown.
 
 This split keeps policy that matters to Swift callers in Swift, parsing in
@@ -227,8 +229,10 @@ not by `AnyDocConversionError`.
 Text-based PDFs can be converted. With the source-built AnyDoc 0.2.4 bridge, an
 image-only, scanned, or mixed PDF with any confirmed OCR-required page fails as
 `AnyDocConversionError.needsOCR`; no partial Markdown is returned. The stable
-native code selects the Swift case, while its associated string remains opaque
-display text. The package does not expose page metadata or perform OCR.
+native code selects the Swift case, whose `pages` value contains sorted,
+unique, one-based page numbers and whose `pageCount` value is the total PDF
+page count. Human-readable native messages are not parsed. The package exposes
+the metadata so callers can own an OCR workflow, but does not perform OCR.
 
 ### Current platform and feature boundaries
 

@@ -3,12 +3,13 @@ import Foundation
 
 /// The non-public Swift-to-C adapter.
 ///
-/// All unsafe buffer borrowing is concentrated in `Functions.live` and
-/// `copyBuffer`. Input buffers remain alive for the synchronous native call.
-/// Result buffers are copied while their opaque owner is live, and that owner
-/// is released exactly once by the Rust-provided free function.
+/// All unsafe buffer borrowing is concentrated in `Functions.live`,
+/// `copyBuffer`, and `copyOCRMetadata`. Input buffers remain alive for the
+/// synchronous native call. Result buffers are copied while their opaque owner
+/// is live, and that owner is released exactly once by the Rust-provided free
+/// function.
 struct AnyDocCAdapter: @unchecked Sendable {
-  static let expectedABIVersion: UInt32 = 1
+  static let expectedABIVersion: UInt32 = 2
   static let live = AnyDocCAdapter(functions: .live)
 
   struct Functions: @unchecked Sendable {
@@ -31,8 +32,15 @@ struct AnyDocCAdapter: @unchecked Sendable {
         OpaquePointer?,
         UnsafeMutablePointer<Int>?
       ) -> UnsafePointer<UInt8>?
+    typealias OCRMetadataAccessor =
+      @Sendable (
+        OpaquePointer?,
+        UnsafeMutablePointer<Int>?,
+        UnsafeMutablePointer<UInt32>?
+      ) -> UnsafePointer<UInt32>?
     typealias ResultFree = @Sendable (OpaquePointer?) -> Void
     typealias CopyBytes = @Sendable (UnsafePointer<UInt8>, Int) -> Data
+    typealias CopyPages = @Sendable (UnsafePointer<UInt32>, Int) -> [UInt32]
 
     let abiVersion: @Sendable () -> UInt32
     let engineVersion: EngineVersion
@@ -41,9 +49,11 @@ struct AnyDocCAdapter: @unchecked Sendable {
     let markdown: ResultAccessor
     let errorCode: ResultAccessor
     let errorMessage: ResultAccessor
+    let needsOCRPages: OCRMetadataAccessor
     let freeResult: ResultFree
     // Test injection proves size validation happens before any unsafe read.
     let copyBytes: CopyBytes
+    let copyPages: CopyPages
 
     static let live = Functions(
       abiVersion: { anydoc_swift_abi_version() },
@@ -55,14 +65,21 @@ struct AnyDocCAdapter: @unchecked Sendable {
       markdown: { anydoc_swift_result_markdown($0, $1) },
       errorCode: { anydoc_swift_result_error_code($0, $1) },
       errorMessage: { anydoc_swift_result_error_message($0, $1) },
+      needsOCRPages: { anydoc_swift_result_needs_ocr_pages($0, $1, $2) },
       freeResult: { anydoc_swift_result_free($0) },
-      copyBytes: { Data(bytes: $0, count: $1) }
+      copyBytes: { Data(bytes: $0, count: $1) },
+      copyPages: { Array(UnsafeBufferPointer(start: $0, count: $1)) }
     )
   }
 
   private struct NativeBuffer {
     let bytes: Data
     let isAbsent: Bool
+  }
+
+  private struct NativeOCRMetadata {
+    let pages: [Int]
+    let pageCount: Int
   }
 
   private let functions: Functions
@@ -159,8 +176,9 @@ struct AnyDocCAdapter: @unchecked Sendable {
       result: result,
       name: "error message"
     )
+    let ocrMetadata = try copyOCRMetadata(result: result)
 
-    guard errorCode.isAbsent, errorMessage.isAbsent else {
+    guard errorCode.isAbsent, errorMessage.isAbsent, ocrMetadata == nil else {
       throw bridgeFailure("Native success result also contained an error.")
     }
 
@@ -194,6 +212,7 @@ struct AnyDocCAdapter: @unchecked Sendable {
       result: result,
       name: "error message"
     )
+    let ocrMetadata = try copyOCRMetadata(result: result)
 
     guard markdown.isAbsent else {
       throw bridgeFailure("Native failure result also contained Markdown.")
@@ -211,6 +230,19 @@ struct AnyDocCAdapter: @unchecked Sendable {
       throw bridgeFailure("Native bridge returned an error message that is not valid UTF-8.")
     }
 
+    if code == "needsOcr" {
+      guard let ocrMetadata else {
+        throw bridgeFailure("Native needsOcr failure contained no OCR page metadata.")
+      }
+      return .needsOCR(
+        pages: ocrMetadata.pages,
+        pageCount: ocrMetadata.pageCount
+      )
+    }
+    guard ocrMetadata == nil else {
+      throw bridgeFailure("Native non-OCR failure also contained OCR page metadata.")
+    }
+
     switch code {
     case "wrapper.invalidInput":
       return .invalidInput(message)
@@ -223,8 +255,6 @@ struct AnyDocCAdapter: @unchecked Sendable {
       return .outputTooLarge(maximumBytes: limits.maximumOutputBytes)
     case "unsupported":
       return .unsupported(message)
-    case "needsOcr":
-      return .needsOCR(message)
     case "malformed":
       return .malformed(message)
     case "encrypted":
@@ -240,6 +270,46 @@ struct AnyDocCAdapter: @unchecked Sendable {
     default:
       return .unrecognizedUpstream(code: code, message: message)
     }
+  }
+
+  private func copyOCRMetadata(result: OpaquePointer) throws -> NativeOCRMetadata? {
+    var length = 0
+    var pageCount: UInt32 = 0
+    let pointer = functions.needsOCRPages(result, &length, &pageCount)
+
+    guard length >= 0 else {
+      throw bridgeFailure("Native bridge returned a negative OCR page-array length.")
+    }
+    guard length > 0 else {
+      guard pointer == nil, pageCount == 0 else {
+        throw bridgeFailure("Native bridge returned inconsistent empty OCR page metadata.")
+      }
+      return nil
+    }
+    guard let pointer else {
+      throw bridgeFailure("Native bridge returned no OCR page array for a non-zero length.")
+    }
+    guard pageCount > 0, UInt64(length) <= UInt64(pageCount) else {
+      throw bridgeFailure("Native bridge returned an invalid OCR page count.")
+    }
+
+    // SAFETY: The C ABI guarantees that a non-null page array is readable for
+    // its reported length until the result is freed. Length and page-count
+    // bounds are validated before this immediate copy.
+    let rawPages = functions.copyPages(pointer, length)
+    let totalPages = Int(pageCount)
+    let pages = rawPages.map(Int.init)
+    var previousPage = 0
+    for page in pages {
+      guard page > previousPage, page <= totalPages else {
+        throw bridgeFailure(
+          "Native bridge returned OCR pages that are not sorted, unique, and within the document page count."
+        )
+      }
+      previousPage = page
+    }
+
+    return NativeOCRMetadata(pages: pages, pageCount: totalPages)
   }
 
   private func copyBuffer(

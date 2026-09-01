@@ -44,6 +44,18 @@ const uint8_t *anydoc_swift_result_error_message(
     size_t *out_length
 );
 
+/*
+ * Borrows the sorted, unique, one-based pages for a needsOcr failure and
+ * reports the document's total page count. Both output pointers are required.
+ * The returned array remains valid only until the result is freed. Non-OCR
+ * results return NULL and set both outputs to zero.
+ */
+const uint32_t *anydoc_swift_result_needs_ocr_pages(
+    const anydoc_swift_result_t *result,
+    size_t *out_length,
+    uint32_t *out_page_count
+);
+
 void anydoc_swift_result_free(
     anydoc_swift_result_t *result
 );

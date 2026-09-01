@@ -6,7 +6,8 @@ public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
   case outputTooLarge(maximumBytes: UInt64)
   case invalidInput(String)
   case unsupported(String)
-  case needsOCR(String)
+  /// The sorted, unique, one-based pages requiring OCR and total PDF page count.
+  case needsOCR(pages: [Int], pageCount: Int)
   case malformed(String)
   case encrypted(String)
   case resourceLimit(String)
@@ -25,8 +26,14 @@ public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
       "Invalid document input: \(message)"
     case .unsupported(let message):
       "Unsupported document: \(message)"
-    case .needsOCR(let message):
-      "Document requires optical character recognition: \(message)"
+    case .needsOCR(let pages, let pageCount):
+      if pageCount > 0, pages.count == pageCount {
+        "All \(pageCount) document pages require optical character recognition."
+      } else if pages.count == 1, let page = pages.first {
+        "Document page \(page) of \(pageCount) requires optical character recognition."
+      } else {
+        "Document pages \(pages.map(String.init).joined(separator: ", ")) of \(pageCount) require optical character recognition."
+      }
     case .malformed(let message):
       "Malformed document: \(message)"
     case .encrypted(let message):

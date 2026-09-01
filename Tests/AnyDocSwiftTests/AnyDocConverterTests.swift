@@ -28,7 +28,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
   func testPublicEngineVersionReportsPinnedBridge() {
     XCTAssertEqual(
       AnyDocConverter.engineVersion,
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1"
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2"
     )
   }
 
@@ -121,7 +121,11 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
 
   func testPublicConverterSurfacesOCRRequiredFailure() async {
     let bridge = FakeNativeBridge(responseProvider: { _ in
-      .failure(code: "needsOcr", message: "page 2 of 2 needs OCR")
+      .needsOCR(
+        pages: [2],
+        pageCount: 2,
+        message: "This display text intentionally contains no page numbers."
+      )
     })
     let converter = AnyDocConverter(
       adapter: bridge.makeAdapter(),
@@ -134,7 +138,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
     } catch {
       XCTAssertEqual(
         error as? AnyDocConversionError,
-        .needsOCR("page 2 of 2 needs OCR")
+        .needsOCR(pages: [2], pageCount: 2)
       )
     }
     XCTAssertEqual(bridge.freeCount, 1)
@@ -143,15 +147,16 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
   func testPublicConverterReportsOCRRequiredForRealPDFFixtures() async throws {
     let converter = AnyDocConverter()
 
-    for fixture in ["pdf/handmade-mixed.pdf", "pdf/handmade-scanned.pdf"] {
+    let cases: [(String, AnyDocConversionError)] = [
+      ("pdf/handmade-mixed.pdf", .needsOCR(pages: [2], pageCount: 2)),
+      ("pdf/handmade-scanned.pdf", .needsOCR(pages: [1, 2], pageCount: 2)),
+    ]
+    for (fixture, expectedError) in cases {
       do {
         _ = try await converter.markdown(from: fixtureData(fixture))
         XCTFail("Expected needsOCR for \(fixture)")
       } catch {
-        guard case .needsOCR(let message) = error as? AnyDocConversionError else {
-          return XCTFail("Expected needsOCR for \(fixture), got \(error)")
-        }
-        XCTAssertFalse(message.isEmpty)
+        XCTAssertEqual(error as? AnyDocConversionError, expectedError)
       }
     }
   }

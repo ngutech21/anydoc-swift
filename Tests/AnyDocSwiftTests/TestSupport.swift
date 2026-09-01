@@ -16,22 +16,65 @@ final class FakeNativeBridge: @unchecked Sendable {
     let markdown: [UInt8]?
     let errorCode: [UInt8]?
     let errorMessage: [UInt8]?
+    let ocrPages: [UInt32]?
+    let ocrPageCount: UInt32
+    let reportedOCRPagesLength: Int?
+
+    init(
+      status: Int32,
+      markdown: [UInt8]?,
+      errorCode: [UInt8]?,
+      errorMessage: [UInt8]?,
+      ocrPages: [UInt32]? = nil,
+      ocrPageCount: UInt32 = 0,
+      reportedOCRPagesLength: Int? = nil
+    ) {
+      self.status = status
+      self.markdown = markdown
+      self.errorCode = errorCode
+      self.errorMessage = errorMessage
+      self.ocrPages = ocrPages
+      self.ocrPageCount = ocrPageCount
+      self.reportedOCRPagesLength = reportedOCRPagesLength
+    }
 
     static func success(_ markdown: String) -> Response {
       Response(
         status: 1,
         markdown: Array(markdown.utf8),
         errorCode: nil,
-        errorMessage: nil
+        errorMessage: nil,
+        ocrPages: nil,
+        ocrPageCount: 0
       )
     }
 
-    static func failure(code: String, message: String = "synthetic failure") -> Response {
+    static func failure(
+      code: String,
+      message: String = "synthetic failure",
+      ocrPages: [UInt32]? = nil,
+      ocrPageCount: UInt32 = 0
+    ) -> Response {
       Response(
         status: 0,
         markdown: nil,
         errorCode: Array(code.utf8),
-        errorMessage: Array(message.utf8)
+        errorMessage: Array(message.utf8),
+        ocrPages: ocrPages,
+        ocrPageCount: ocrPageCount
+      )
+    }
+
+    static func needsOCR(
+      pages: [UInt32],
+      pageCount: UInt32,
+      message: String = "document requires OCR"
+    ) -> Response {
+      failure(
+        code: "needsOcr",
+        message: message,
+        ocrPages: pages,
+        ocrPageCount: pageCount
       )
     }
   }
@@ -62,17 +105,47 @@ final class FakeNativeBridge: @unchecked Sendable {
     }
   }
 
+  private final class StablePages: @unchecked Sendable {
+    let pointer: UnsafeMutablePointer<UInt32>?
+    let count: Int
+
+    init(_ pages: [UInt32]?) {
+      guard let pages else {
+        pointer = nil
+        count = 0
+        return
+      }
+
+      count = pages.count
+      let pointer = UnsafeMutablePointer<UInt32>.allocate(capacity: max(1, pages.count))
+      for (index, page) in pages.enumerated() {
+        pointer[index] = page
+      }
+      self.pointer = pointer
+    }
+
+    deinit {
+      pointer?.deallocate()
+    }
+  }
+
   private final class ResultHandle: @unchecked Sendable {
     let status: Int32
     let markdown: StableBytes
     let errorCode: StableBytes
     let errorMessage: StableBytes
+    let ocrPages: StablePages
+    let ocrPageCount: UInt32
+    let reportedOCRPagesLength: Int?
 
     init(response: Response) {
       status = response.status
       markdown = StableBytes(response.markdown)
       errorCode = StableBytes(response.errorCode)
       errorMessage = StableBytes(response.errorMessage)
+      ocrPages = StablePages(response.ocrPages)
+      ocrPageCount = response.ocrPageCount
+      reportedOCRPagesLength = response.reportedOCRPagesLength
     }
   }
 
@@ -82,13 +155,14 @@ final class FakeNativeBridge: @unchecked Sendable {
   private var storedInvocations: [Invocation] = []
   private var storedFreeCount = 0
   private var storedCopyCount = 0
+  private var storedPageCopyCount = 0
 
   let abiVersion: UInt32
 
   init(
     abiVersion: UInt32 = AnyDocCAdapter.expectedABIVersion,
     versionBytes: [UInt8]? = Array(
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1".utf8
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2".utf8
     ),
     responseProvider: @escaping ResponseProvider = { _ in .success("Markdown") }
   ) {
@@ -113,6 +187,12 @@ final class FakeNativeBridge: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return storedCopyCount
+  }
+
+  var pageCopyCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return storedPageCopyCount
   }
 
   func makeAdapter() -> AnyDocCAdapter {
@@ -157,6 +237,13 @@ final class FakeNativeBridge: @unchecked Sendable {
             outLength: outLength
           )
         },
+        needsOCRPages: { handle, outLength, outPageCount in
+          Self.ocrMetadata(
+            Self.result(for: handle),
+            outLength: outLength,
+            outPageCount: outPageCount
+          )
+        },
         freeResult: { [self] handle in
           guard let handle else {
             return
@@ -171,6 +258,12 @@ final class FakeNativeBridge: @unchecked Sendable {
           storedCopyCount += 1
           lock.unlock()
           return Data(bytes: pointer, count: length)
+        },
+        copyPages: { [self] pointer, length in
+          lock.lock()
+          storedPageCopyCount += 1
+          lock.unlock()
+          return Array(UnsafeBufferPointer(start: pointer, count: length))
         }
       )
     )
@@ -228,6 +321,22 @@ final class FakeNativeBridge: @unchecked Sendable {
     }
     outLength.pointee = buffer.count
     return buffer.pointer.map { UnsafePointer<UInt8>($0) }
+  }
+
+  private static func ocrMetadata(
+    _ result: ResultHandle?,
+    outLength: UnsafeMutablePointer<Int>?,
+    outPageCount: UnsafeMutablePointer<UInt32>?
+  ) -> UnsafePointer<UInt32>? {
+    outLength?.pointee = 0
+    outPageCount?.pointee = 0
+    guard let outLength, let outPageCount, let result else {
+      return nil
+    }
+
+    outLength.pointee = result.reportedOCRPagesLength ?? result.ocrPages.count
+    outPageCount.pointee = result.ocrPageCount
+    return result.ocrPages.pointer.map { UnsafePointer<UInt32>($0) }
   }
 }
 

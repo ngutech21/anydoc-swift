@@ -10,9 +10,9 @@ mod engine;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::{ptr, slice, str};
 
-const ABI_VERSION: u32 = 1;
+const ABI_VERSION: u32 = 2;
 const ENGINE_VERSION: &[u8] =
-    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1";
+    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2";
 
 const INVALID_INPUT_CODE: &str = "wrapper.invalidInput";
 const INPUT_LIMIT_CODE: &str = "wrapper.inputLimit";
@@ -29,8 +29,14 @@ pub struct AnydocSwiftResult {
 }
 
 enum ResultPayload {
-    Success { markdown: Box<[u8]> },
-    Failure { code: Box<[u8]>, message: Box<[u8]> },
+    Success {
+        markdown: Box<[u8]>,
+    },
+    Failure {
+        code: Box<[u8]>,
+        message: Box<[u8]>,
+        needs_ocr: Option<NeedsOcrMetadata>,
+    },
 }
 
 impl AnydocSwiftResult {
@@ -47,15 +53,23 @@ impl AnydocSwiftResult {
             payload: ResultPayload::Failure {
                 code: failure.code.into_bytes().into_boxed_slice(),
                 message: failure.message.into_bytes().into_boxed_slice(),
+                needs_ocr: failure.needs_ocr,
             },
         }
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
+struct NeedsOcrMetadata {
+    pages: Box<[u32]>,
+    page_count: u32,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 struct BridgeFailure {
     code: String,
     message: String,
+    needs_ocr: Option<NeedsOcrMetadata>,
 }
 
 impl BridgeFailure {
@@ -63,6 +77,18 @@ impl BridgeFailure {
         Self {
             code: code.into(),
             message: message.into(),
+            needs_ocr: None,
+        }
+    }
+
+    fn needs_ocr(pages: Vec<u32>, page_count: u32, message: impl Into<String>) -> Self {
+        Self {
+            code: "needsOcr".to_owned(),
+            message: message.into(),
+            needs_ocr: Some(NeedsOcrMetadata {
+                pages: pages.into_boxed_slice(),
+                page_count,
+            }),
         }
     }
 }
@@ -195,6 +221,13 @@ fn error_message_buffer(payload: &ResultPayload) -> Option<&[u8]> {
     }
 }
 
+fn needs_ocr_metadata(payload: &ResultPayload) -> Option<&NeedsOcrMetadata> {
+    match payload {
+        ResultPayload::Success { .. } => None,
+        ResultPayload::Failure { needs_ocr, .. } => needs_ocr.as_ref(),
+    }
+}
+
 /// Returns the C interface version implemented by this bridge.
 #[unsafe(no_mangle)]
 pub extern "C" fn anydoc_swift_abi_version() -> u32 {
@@ -318,6 +351,51 @@ pub unsafe extern "C" fn anydoc_swift_result_error_message(
 ) -> *const u8 {
     // SAFETY: The caller obligations are identical to `result_buffer`'s.
     unsafe { result_buffer(result, out_length, error_message_buffer) }
+}
+
+/// Borrows the one-based page numbers and total page count for `needsOcr`.
+///
+/// # Safety
+///
+/// `result` must be null or a live result handle. Both output pointers must
+/// point to writable storage; if either is null, the accessor returns null.
+/// Returned page numbers remain valid only until the result handle is freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn anydoc_swift_result_needs_ocr_pages(
+    result: *const AnydocSwiftResult,
+    out_length: *mut usize,
+    out_page_count: *mut u32,
+) -> *const u32 {
+    if !out_length.is_null() {
+        // SAFETY: The caller promises that a non-null output pointer is writable.
+        unsafe { out_length.write(0) };
+    }
+    if !out_page_count.is_null() {
+        // SAFETY: The caller promises that a non-null output pointer is writable.
+        unsafe { out_page_count.write(0) };
+    }
+    if out_length.is_null() || out_page_count.is_null() {
+        return ptr::null();
+    }
+
+    // SAFETY: The exported accessor requires a non-null result pointer to be a
+    // live handle returned by this module. `as_ref` handles null explicitly.
+    let Some(result) = (unsafe { result.as_ref() }) else {
+        return ptr::null();
+    };
+    let Some(metadata) = needs_ocr_metadata(&result.payload) else {
+        return ptr::null();
+    };
+
+    // SAFETY: The caller promises that `out_length` is writable.
+    unsafe { out_length.write(metadata.pages.len()) };
+    // SAFETY: The caller promises that `out_page_count` is writable.
+    unsafe { out_page_count.write(metadata.page_count) };
+    if metadata.pages.is_empty() {
+        ptr::null()
+    } else {
+        metadata.pages.as_ptr()
+    }
 }
 
 /// Releases a result handle and all buffers owned by it.
@@ -502,6 +580,26 @@ i Endnote body text.
         fn error_message(&self) -> Option<String> {
             self.text(anydoc_swift_result_error_message)
         }
+
+        fn needs_ocr(&self) -> Option<(Vec<u32>, u32)> {
+            let mut length = usize::MAX;
+            let mut page_count = u32::MAX;
+            // SAFETY: `OwnedResult` keeps a live handle and both output values
+            // are writable for the duration of the accessor call.
+            let pointer = unsafe {
+                anydoc_swift_result_needs_ocr_pages(self.0, &raw mut length, &raw mut page_count)
+            };
+            if pointer.is_null() {
+                assert_eq!(length, 0);
+                assert_eq!(page_count, 0);
+                return None;
+            }
+
+            // SAFETY: The accessor returned `length` readable `u32` values
+            // owned by this live result. Copy them before the handle is freed.
+            let pages = unsafe { slice::from_raw_parts(pointer, length) }.to_vec();
+            Some((pages, page_count))
+        }
     }
 
     impl Drop for OwnedResult {
@@ -521,6 +619,7 @@ i Endnote body text.
                 .error_message()
                 .is_some_and(|message| !message.is_empty())
         );
+        assert_eq!(result.needs_ocr(), None);
     }
 
     #[test]
@@ -532,7 +631,7 @@ i Endnote body text.
 
     #[test]
     fn reports_embedded_abi_and_engine_versions() {
-        assert_eq!(anydoc_swift_abi_version(), 1);
+        assert_eq!(anydoc_swift_abi_version(), 2);
 
         let mut length = 0;
         // SAFETY: `length` is writable for the accessor call.
@@ -645,10 +744,25 @@ i Endnote body text.
 
     #[test]
     fn pdfs_needing_ocr_fail_without_markdown() {
-        for fixture in [MIXED_PDF_FIXTURE, SCANNED_PDF_FIXTURE] {
+        let cases: [(&[u8], &[u32], u32); 2] = [
+            (MIXED_PDF_FIXTURE, &[2], 2),
+            (SCANNED_PDF_FIXTURE, &[1, 2], 2),
+        ];
+
+        for (fixture, expected_pages, expected_page_count) in cases {
             let result = OwnedResult::convert(Some(fixture), None, u64::MAX, u64::MAX);
-            assert_failure(&result, "needsOcr");
+            assert!(!result.is_success());
             assert_eq!(result.markdown(), None);
+            assert_eq!(result.error_code().as_deref(), Some("needsOcr"));
+            assert!(
+                result
+                    .error_message()
+                    .is_some_and(|message| !message.is_empty())
+            );
+            assert_eq!(
+                result.needs_ocr(),
+                Some((expected_pages.to_vec(), expected_page_count))
+            );
         }
     }
 
@@ -692,6 +806,7 @@ i Endnote body text.
         assert!(success.is_success());
         assert_eq!(success.error_code(), None);
         assert_eq!(success.error_message(), None);
+        assert_eq!(success.needs_ocr(), None);
 
         let mut first_length = 0;
         let mut second_length = 0;
@@ -742,6 +857,17 @@ i Endnote body text.
             assert_eq!(length, 0);
         }
 
+        let mut length = usize::MAX;
+        let mut page_count = u32::MAX;
+        // SAFETY: Null result handles are supported and both outputs are
+        // writable, so they must be reset to zero.
+        let pages = unsafe {
+            anydoc_swift_result_needs_ocr_pages(ptr::null(), &raw mut length, &raw mut page_count)
+        };
+        assert!(pages.is_null());
+        assert_eq!(length, 0);
+        assert_eq!(page_count, 0);
+
         let result = OwnedResult::convert(Some(RTF_FIXTURE), None, u64::MAX, u64::MAX);
         for accessor in [
             anydoc_swift_result_markdown as Accessor,
@@ -751,6 +877,24 @@ i Endnote body text.
             // SAFETY: A null output-length pointer is explicitly supported.
             assert!(unsafe { accessor(result.0, ptr::null_mut()) }.is_null());
         }
+
+        let mut length = usize::MAX;
+        let mut page_count = u32::MAX;
+        // SAFETY: A null page-count pointer is explicitly supported and the
+        // non-null length must still be reset.
+        let pages = unsafe {
+            anydoc_swift_result_needs_ocr_pages(result.0, &raw mut length, ptr::null_mut())
+        };
+        assert!(pages.is_null());
+        assert_eq!(length, 0);
+
+        // SAFETY: A null length pointer is explicitly supported and the
+        // non-null page count must still be reset.
+        let pages = unsafe {
+            anydoc_swift_result_needs_ocr_pages(result.0, ptr::null_mut(), &raw mut page_count)
+        };
+        assert!(pages.is_null());
+        assert_eq!(page_count, 0);
 
         // SAFETY: Freeing a null handle is explicitly a no-op.
         unsafe { anydoc_swift_result_free(ptr::null_mut()) };

@@ -12,7 +12,7 @@ final class AnyDocCAdapterTests: XCTestCase {
   func testLiveAdapterReportsPinnedVersionAndConvertsRealFixtures() throws {
     XCTAssertEqual(
       try AnyDocCAdapter.live.engineVersion(),
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1"
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2"
     )
 
     let rtf = try AnyDocCAdapter.live.markdown(
@@ -29,7 +29,11 @@ final class AnyDocCAdapterTests: XCTestCase {
     )
     XCTAssertTrue(csv.contains("| padded | comma, inside | 3 |"))
 
-    for fixture in ["pdf/handmade-mixed.pdf", "pdf/handmade-scanned.pdf"] {
+    let ocrCases: [(String, AnyDocConversionError)] = [
+      ("pdf/handmade-mixed.pdf", .needsOCR(pages: [2], pageCount: 2)),
+      ("pdf/handmade-scanned.pdf", .needsOCR(pages: [1, 2], pageCount: 2)),
+    ]
+    for (fixture, expectedError) in ocrCases {
       XCTAssertThrowsError(
         try AnyDocCAdapter.live.markdown(
           from: fixtureData(fixture),
@@ -37,10 +41,7 @@ final class AnyDocCAdapterTests: XCTestCase {
           limits: .standard
         )
       ) { error in
-        guard case .needsOCR(let message) = error as? AnyDocConversionError else {
-          return XCTFail("Expected needsOCR, got \(error)")
-        }
-        XCTAssertFalse(message.isEmpty)
+        XCTAssertEqual(error as? AnyDocConversionError, expectedError)
       }
     }
   }
@@ -72,7 +73,6 @@ final class AnyDocCAdapterTests: XCTestCase {
       ("wrapper.inputLimit", .inputTooLarge(actualBytes: 3, maximumBytes: 128)),
       ("wrapper.outputLimit", .outputTooLarge(maximumBytes: 64)),
       ("unsupported", .unsupported("synthetic failure")),
-      ("needsOcr", .needsOCR("synthetic failure")),
       ("malformed", .malformed("synthetic failure")),
       ("encrypted", .encrypted("synthetic failure")),
       ("resourceLimit", .resourceLimit("synthetic failure")),
@@ -96,6 +96,28 @@ final class AnyDocCAdapterTests: XCTestCase {
       }
       XCTAssertEqual(bridge.freeCount, 1)
     }
+  }
+
+  func testNeedsOCRMapsStructuredMetadataWithoutParsingTheMessage() {
+    let bridge = FakeNativeBridge(responseProvider: { _ in
+      .needsOCR(
+        pages: [2, 4],
+        pageCount: 5,
+        message: "This display text intentionally contains no page numbers."
+      )
+    })
+    let adapter = bridge.makeAdapter()
+
+    XCTAssertThrowsError(
+      try adapter.markdown(from: Data([1]), fileExtension: nil, limits: limits)
+    ) { error in
+      XCTAssertEqual(
+        error as? AnyDocConversionError,
+        .needsOCR(pages: [2, 4], pageCount: 5)
+      )
+    }
+    XCTAssertEqual(bridge.pageCopyCount, 1)
+    XCTAssertEqual(bridge.freeCount, 1)
   }
 
   func testOutputLimitIsCheckedBeforeCopyingNativeMarkdown() {
@@ -155,6 +177,122 @@ final class AnyDocCAdapterTests: XCTestCase {
     }
   }
 
+  func testMalformedOCRMetadataBecomesBridgeFailureAndIsFreed() {
+    let needsOCRCode = Array("needsOcr".utf8)
+    let unsupportedCode = Array("unsupported".utf8)
+    let message = Array("synthetic failure".utf8)
+    let responses: [FakeNativeBridge.Response] = [
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: nil,
+        ocrPageCount: 2
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [],
+        ocrPageCount: 0
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [1],
+        ocrPageCount: 0
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [0],
+        ocrPageCount: 2
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [3],
+        ocrPageCount: 2
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [2, 1],
+        ocrPageCount: 2
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: needsOCRCode,
+        errorMessage: message,
+        ocrPages: [1, 1],
+        ocrPageCount: 2
+      ),
+      .init(
+        status: 1,
+        markdown: Array("ok".utf8),
+        errorCode: nil,
+        errorMessage: nil,
+        ocrPages: [1],
+        ocrPageCount: 1
+      ),
+      .init(
+        status: 0,
+        markdown: nil,
+        errorCode: unsupportedCode,
+        errorMessage: message,
+        ocrPages: [1],
+        ocrPageCount: 1
+      ),
+    ]
+
+    for response in responses {
+      let bridge = FakeNativeBridge(responseProvider: { _ in response })
+
+      XCTAssertThrowsError(
+        try bridge.makeAdapter().markdown(from: Data([1]), fileExtension: nil, limits: limits)
+      ) { error in
+        guard case .bridgeFailure = error as? AnyDocConversionError else {
+          return XCTFail("Expected bridgeFailure, got \(error)")
+        }
+      }
+      XCTAssertEqual(bridge.freeCount, 1)
+    }
+  }
+
+  func testOCRLengthIsValidatedBeforeCopyingNativePages() {
+    let response = FakeNativeBridge.Response(
+      status: 0,
+      markdown: nil,
+      errorCode: Array("needsOcr".utf8),
+      errorMessage: Array("synthetic failure".utf8),
+      ocrPages: [1],
+      ocrPageCount: 1,
+      reportedOCRPagesLength: 2
+    )
+    let bridge = FakeNativeBridge(responseProvider: { _ in response })
+
+    XCTAssertThrowsError(
+      try bridge.makeAdapter().markdown(from: Data([1]), fileExtension: nil, limits: limits)
+    ) { error in
+      guard case .bridgeFailure = error as? AnyDocConversionError else {
+        return XCTFail("Expected bridgeFailure, got \(error)")
+      }
+    }
+    XCTAssertEqual(bridge.pageCopyCount, 0)
+    XCTAssertEqual(bridge.freeCount, 1)
+  }
+
   func testMissingHandleAndABIMismatchBecomeBridgeFailuresWithoutFreeing() {
     let missing = FakeNativeBridge(responseProvider: { _ in nil })
     XCTAssertThrowsError(
@@ -166,7 +304,7 @@ final class AnyDocCAdapterTests: XCTestCase {
     }
     XCTAssertEqual(missing.freeCount, 0)
 
-    let mismatch = FakeNativeBridge(abiVersion: 2)
+    let mismatch = FakeNativeBridge(abiVersion: 1)
     XCTAssertThrowsError(
       try mismatch.makeAdapter().markdown(from: Data(), fileExtension: nil, limits: limits)
     ) { error in
@@ -179,7 +317,7 @@ final class AnyDocCAdapterTests: XCTestCase {
   }
 
   func testEngineVersionUsesSafeFallbackForEveryBridgeFailure() {
-    let mismatched = FakeNativeBridge(abiVersion: 2).makeAdapter()
+    let mismatched = FakeNativeBridge(abiVersion: 1).makeAdapter()
     let missing = FakeNativeBridge(versionBytes: nil).makeAdapter()
     let invalidUTF8 = FakeNativeBridge(versionBytes: [0xff]).makeAdapter()
 
