@@ -21,6 +21,11 @@ Firecrawl.
 - macOS 13 or later on Apple Silicon
 - Swift 6.1 or later
 
+The source tree also contains unreleased support for iOS 15 or later on arm64
+devices and Apple-Silicon simulators. The current `0.1.4` package still pins a
+macOS-only native archive; do not advertise or consume the iOS support until
+the staged `binary-0.1.5` and `0.1.5` releases have completed.
+
 ## Installation
 
 Add AnyDocSwift to your Swift package dependencies and include the

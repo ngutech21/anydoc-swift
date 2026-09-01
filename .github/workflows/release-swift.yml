@@ -80,11 +80,7 @@ jobs:
         run: just ci
 
       - name: Test the published binary dependency
-        run: |
-          xcrun swift package reset
-          xcrun swift build
-          xcrun swift build -c release
-          xcrun swift test
+        run: just verify-published-package
 
       - name: Publish GitHub release
         env:

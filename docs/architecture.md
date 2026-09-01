@@ -1,7 +1,7 @@
 # AnyDocSwift Architecture
 
-AnyDocSwift is a macOS Swift package that converts document bytes into
-GitHub-Flavored Markdown. It wraps the Rust
+The AnyDocSwift source package targets macOS and iOS and converts document
+bytes into GitHub-Flavored Markdown. It wraps the Rust
 [`anydoc`](https://github.com/firecrawl/anydoc) engine without exposing Rust or
 C types to applications.
 
@@ -53,17 +53,21 @@ Conversion itself is local and in-process. It does not make network requests.
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Contains the public actor and error type plus the private Swift-to-C adapter. |
 | [`Native/include/`](../Native/include/) | Defines the versioned C ABI header used by Swift. |
 | [`Native/framework/`](../Native/framework/) | Defines the framework module, bundle metadata, and exact exported-symbol list. |
+| [`Native/privacy/`](../Native/privacy/) | Records the Apple required-reason imports checked by the release gate. |
 | [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Implements the C ABI, owns native result memory, and calls the pinned AnyDoc engine. |
 | [`THIRD_PARTY_NOTICES.txt`](../THIRD_PARTY_NOTICES.txt) | Records the licenses and attribution notices for the locked native release graph. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, concurrency, cancellation, error mapping, ABI validation, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded documents used for real conversions. |
 | [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains small C and Swift consumers used to validate the packaged framework. |
+| [`Tests/PublicConsumerSmoke/`](../Tests/PublicConsumerSmoke/) | Contains the public Swift consumer final-linked for a physical iOS device. |
+| [`Scripts/`](../Scripts/) | Implements three-slice packaging, structural verification, Xcode processing, simulator execution, and privacy auditing. |
 | [`Examples/AnyDocSwiftExample/`](../Examples/AnyDocSwiftExample/) | Demonstrates a complete command-line consumer. |
 | [`Justfile`](../Justfile) | Provides the supported build, test, packaging, and verification entry points. |
 | [`.github/workflows/`](../.github/workflows/) | Runs CI and the separate native-binary and Swift-package release processes. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Documents contributor setup, validation, and local artifact generation. |
 | [`docs/releasing.md`](releasing.md) | Documents the maintainer-only binary and Swift package release procedures. |
-| [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler, components, and Apple Silicon target used for the bridge. |
+| [`docs/ios-required-reason-audit.md`](ios-required-reason-audit.md) | Records the blocking iOS privacy imports and their concrete native call paths. |
+| [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler, components, and macOS/iOS arm64 targets used for the bridge. |
 
 SwiftPM is the root project. There is intentionally no root Xcode project.
 
@@ -230,8 +234,14 @@ was extracted.
 
 ### Current platform and feature boundaries
 
-The released binary targets macOS 13 or later on Apple Silicon. The package
-currently works on complete in-memory documents and does not provide:
+The source artifact targets macOS 13 or later on Apple Silicon, iOS 15 or later
+on arm64 devices, and iOS 15 or later on arm64 Apple-Silicon simulators. The
+published `0.1.4` package still pins the previous macOS-only binary; iOS becomes
+a released consumer contract only after `binary-0.1.5` is verified and the
+Swift package `0.1.5` pins it. x86_64 Simulator, Mac Catalyst, and visionOS are
+not supported.
+
+The package works on complete in-memory documents and does not provide:
 
 - OCR;
 - streaming output or progress reporting;
@@ -247,6 +257,12 @@ currently works on complete in-memory documents and does not provide:
 remote binary target whose release URL and SHA-256 checksum are pinned together.
 SwiftPM downloads and verifies that archive for ordinary `swift build` and
 `swift test` commands.
+
+The native archive contains three dynamic-framework variants in one
+XCFramework: a versioned macOS arm64 framework, a flat iOS arm64 device
+framework, and a flat arm64 iOS Simulator framework. Each variant is ad-hoc
+signed before assembly. The XCFramework container itself is not signed;
+integrity comes from the immutable release asset and SwiftPM checksum.
 
 Local native development selects a verified XCFramework through the same
 private binary-target seam used by the remote release. The bridge owns its

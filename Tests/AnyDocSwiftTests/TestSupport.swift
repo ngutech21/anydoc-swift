@@ -334,8 +334,13 @@ let immediateEnqueue: AnyDocConverter.Enqueue = { operation in
 }
 
 func fixtureData(_ relativePath: String) throws -> Data {
-  let testsDirectory = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  return try Data(contentsOf: testsDirectory.appendingPathComponent("Fixtures/\(relativePath)"))
+  guard let resourceURL = Bundle.module.resourceURL else {
+    throw CocoaError(.fileNoSuchFile)
+  }
+  return try Data(
+    contentsOf:
+      resourceURL
+      .appendingPathComponent("Fixtures", isDirectory: true)
+      .appendingPathComponent(relativePath)
+  )
 }

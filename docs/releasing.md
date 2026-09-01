@@ -19,9 +19,16 @@ version `X.Y.Z`. The workflow:
 2. builds and verifies the native archive with `just artifact`;
 3. creates and verifies the `binary-X.Y.Z` tag;
 4. uploads the archive to a draft release;
-5. downloads the uploaded asset and verifies its bytes, checksum, framework,
-   license resources, exported ABI, and smoke consumers; and
+5. downloads the uploaded asset and repeats the three-slice structure,
+   signature, resource, generic-destination, physical-device linkage, and real
+   iOS Simulator conversion gates; and
 6. publishes and verifies the immutable release.
+
+The binary workflow deliberately fails if either iOS slice imports an API on
+the checked Apple required-reason list. Surface the concrete native call path
+before adding a privacy manifest. Do not invent a reason or publish an empty
+declaration merely to pass the gate. The known blocker and reproduction are in
+the [iOS required-reason audit](ios-required-reason-audit.md).
 
 Record the SwiftPM checksum reported by the release. Do not update
 `Package.swift` until the published asset has passed these checks.
@@ -29,8 +36,9 @@ Record the SwiftPM checksum reported by the release. Do not update
 ## 2. Update and verify the Swift package
 
 Update the binary URL and checksum together in `Package.swift`. Keep the README,
-example package, architecture guide, contributor guidance, and current-state
-documentation consistent with the release.
+architecture guide, contributor guidance, and current-state documentation
+consistent with the release. Leave the checked-in example on the last existing
+Swift tag until the new package tag has been published.
 
 Run the complete local gate:
 
@@ -38,14 +46,11 @@ Run the complete local gate:
 just final-check
 ```
 
-Then verify ordinary consumers against the published binary rather than the
-locally built bridge:
+Then verify ordinary macOS and iOS consumers against the published binary,
+with Cargo absent from consumer-only steps:
 
 ```sh
-xcrun swift package reset
-xcrun swift build
-xcrun swift build -c release
-xcrun swift test
+just verify-published-package
 ```
 
 ## 3. Publish the Swift package
@@ -55,11 +60,17 @@ After the manifest and documentation changes are on `master`, run the
 version `X.Y.Z`. The workflow:
 
 1. runs the Rust and Swift CI suites;
-2. resets SwiftPM state and builds debug and release configurations against the
-   published binary dependency;
-3. runs the Swift tests against that dependency;
+2. resets SwiftPM state and builds debug and release macOS configurations
+   against the published binary dependency;
+3. builds generic macOS, iOS-device, and iOS-simulator destinations, final-links
+   the public device consumer, and runs the complete test target on a temporary
+   arm64 iPhone Simulator;
 4. publishes the `X.Y.Z` GitHub release and tag; and
 5. verifies that the release is published, non-prerelease, and immutable.
+
+Only after the `X.Y.Z` tag exists, update the checked-in macOS CLI example to
+that exact version and verify its resolved revision. Close the originating iOS
+support issue only after this remote-package gate passes.
 
 ## Immutability
 

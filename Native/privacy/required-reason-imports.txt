@@ -1,0 +1,22 @@
+# Apple required-reason API imports checked on 2026-08-30.
+# Source: https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype
+#
+# File timestamp APIs
+_getattrlist
+_getattrlistbulk
+_fgetattrlist
+_stat
+_fstat
+_fstatat
+_lstat
+_getattrlistat
+# System boot time APIs
+_mach_absolute_time
+# Disk space APIs
+_statfs
+_statvfs
+_fstatfs
+_fstatvfs
+# Objective-C entry points used by the active-keyboard and user-default APIs
+_OBJC_CLASS_$_UITextInputMode
+_OBJC_CLASS_$_NSUserDefaults

@@ -6,7 +6,11 @@ accepted = [
   "Zlib",
 ]
 
-targets = ["aarch64-apple-darwin"]
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
+]
 ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
