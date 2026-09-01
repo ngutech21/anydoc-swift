@@ -14,8 +14,8 @@ let bridgeTarget: Target =
   : .binaryTarget(
     name: "AnyDocSwiftBridge",
     url:
-      "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.4/AnyDocSwiftBridge.xcframework.zip",
-    checksum: "031c5c6d2c318be9ebe1f369469e357d727eef71ff05e6277c8817f1521b967f"
+      "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.5/AnyDocSwiftBridge.xcframework.zip",
+    checksum: "75b006807443a1195ae9a8ee37b504e7fe336cfe06d29e2bb4a6ca563bece98d"
   )
 
 let package = Package(
