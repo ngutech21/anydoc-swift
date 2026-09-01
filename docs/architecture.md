@@ -29,7 +29,7 @@ AnyDocSwiftBridge (dynamic framework with a private Rust runtime)
   |
   | content detection and conversion
   v
-AnyDoc 0.2.3
+AnyDoc 0.2.4 in source-built bridge
   |
   | UTF-8 Markdown or a stable error code
   v
@@ -44,6 +44,7 @@ There are two distinct build-time experiences:
   toolchain, then test the Swift layer against the local artifact.
 
 Conversion itself is local and in-process. It does not make network requests.
+
 
 ## Repository map
 
@@ -140,7 +141,7 @@ The complete native conversion is contained with Rust's `catch_unwind`. A
 panic becomes a bridge failure rather than unwinding through C into Swift.
 Release builds retain unwinding for this reason.
 
-The native dependency is pinned to `anydoc = "=0.2.3"` and its complete
+The native dependency is pinned to `anydoc = "=0.2.4"` and its complete
 transitive graph is locked by
 [`Cargo.lock`](../Rust/anydoc-swift-bridge/Cargo.lock). The embedded engine
 version also records AnyDoc's originating revision so a diagnostic can identify
@@ -212,21 +213,22 @@ finish first, then the awaiting task receives `CancellationError`.
 ### Errors
 
 Expected conversion problems use `AnyDocConversionError`, including invalid or
-oversized input, oversized output, unsupported, malformed, encrypted, missing,
-resource-limited, and I/O cases. Unknown future AnyDoc codes are preserved in
-`unrecognizedUpstream(code:message:)` rather than being inferred from message
-text. ABI mismatches, invalid native UTF-8, panics, and inconsistent native
-results become `bridgeFailure`.
+oversized input, oversized output, unsupported, OCR-required, malformed,
+encrypted, missing, resource-limited, and I/O cases. Unknown future AnyDoc codes
+are preserved in `unrecognizedUpstream(code:message:)` rather than being
+inferred from message text. ABI mismatches, invalid native UTF-8, panics, and
+inconsistent native results become `bridgeFailure`.
 
 Task cancellation is deliberately represented by Swift's `CancellationError`,
 not by `AnyDocConversionError`.
 
 ### PDFs
 
-Text-based PDFs can be converted. Image-only and scanned PDFs need OCR, which
-this package does not provide. Mixed PDFs may return useful Markdown while
-omitting pages that require OCR, so success does not guarantee that every page
-was extracted.
+Text-based PDFs can be converted. With the source-built AnyDoc 0.2.4 bridge, an
+image-only, scanned, or mixed PDF with any confirmed OCR-required page fails as
+`AnyDocConversionError.needsOCR`; no partial Markdown is returned. The stable
+native code selects the Swift case, while its associated string remains opaque
+display text. The package does not expose page metadata or perform OCR.
 
 ### Current platform and feature boundaries
 

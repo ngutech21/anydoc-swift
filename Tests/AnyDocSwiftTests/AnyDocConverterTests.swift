@@ -28,7 +28,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
   func testPublicEngineVersionReportsPinnedBridge() {
     XCTAssertEqual(
       AnyDocConverter.engineVersion,
-      "AnyDoc 0.2.3 (bf3d33e61731580d1ee1c6a85e56093d715a21a6); AnyDocSwift bridge ABI 1"
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1"
     )
   }
 
@@ -117,6 +117,43 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
     }
 
     XCTAssertTrue(bridge.invocations.isEmpty)
+  }
+
+  func testPublicConverterSurfacesOCRRequiredFailure() async {
+    let bridge = FakeNativeBridge(responseProvider: { _ in
+      .failure(code: "needsOcr", message: "page 2 of 2 needs OCR")
+    })
+    let converter = AnyDocConverter(
+      adapter: bridge.makeAdapter(),
+      enqueue: immediateEnqueue
+    )
+
+    do {
+      _ = try await converter.markdown(from: Data([1]))
+      XCTFail("Expected needsOCR")
+    } catch {
+      XCTAssertEqual(
+        error as? AnyDocConversionError,
+        .needsOCR("page 2 of 2 needs OCR")
+      )
+    }
+    XCTAssertEqual(bridge.freeCount, 1)
+  }
+
+  func testPublicConverterReportsOCRRequiredForRealPDFFixtures() async throws {
+    let converter = AnyDocConverter()
+
+    for fixture in ["pdf/handmade-mixed.pdf", "pdf/handmade-scanned.pdf"] {
+      do {
+        _ = try await converter.markdown(from: fixtureData(fixture))
+        XCTFail("Expected needsOCR for \(fixture)")
+      } catch {
+        guard case .needsOCR(let message) = error as? AnyDocConversionError else {
+          return XCTFail("Expected needsOCR for \(fixture), got \(error)")
+        }
+        XCTAssertFalse(message.isEmpty)
+      }
+    }
   }
 
   func testCancellationBeforeDispatchSkipsNativeWork() async {

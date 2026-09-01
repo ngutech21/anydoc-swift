@@ -6,6 +6,7 @@ public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
   case outputTooLarge(maximumBytes: UInt64)
   case invalidInput(String)
   case unsupported(String)
+  case needsOCR(String)
   case malformed(String)
   case encrypted(String)
   case resourceLimit(String)
@@ -24,6 +25,8 @@ public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
       "Invalid document input: \(message)"
     case .unsupported(let message):
       "Unsupported document: \(message)"
+    case .needsOCR(let message):
+      "Document requires optical character recognition: \(message)"
     case .malformed(let message):
       "Malformed document: \(message)"
     case .encrypted(let message):

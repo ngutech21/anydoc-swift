@@ -1,0 +1,5 @@
+# Fixture hashes require byte-identical checkouts.
+Tests/Fixtures/** -text
+
+# Handwritten PDFs can look textual while containing byte-offset xref tables.
+Tests/Fixtures/**/*.pdf binary

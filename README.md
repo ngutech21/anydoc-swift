@@ -129,16 +129,22 @@ task receives `CancellationError`.
 ### Errors
 
 Conversion failures use `AnyDocConversionError`, including invalid or
-oversized input, oversized output, unsupported, malformed, encrypted, missing,
-resource-limited, and I/O cases. Unknown future engine codes remain observable
-through `unrecognizedUpstream(code:message:)`. Task cancellation uses Swift's
-`CancellationError` instead.
+oversized input, oversized output, unsupported, OCR-required, malformed,
+encrypted, missing, resource-limited, and I/O cases. Unknown future engine
+codes remain observable through `unrecognizedUpstream(code:message:)`. Task
+cancellation uses Swift's `CancellationError` instead.
 
 ### PDFs and unsupported features
 
-Text-based PDFs can be converted. Image-only and scanned PDFs require OCR and
-are unsupported. Mixed PDFs may omit pages that require OCR, so successful
-conversion does not guarantee that every page was extracted.
+Text-based PDFs can be converted. In the source-built AnyDoc 0.2.4 bridge, an
+image-only, scanned, or mixed PDF with any page requiring OCR fails with
+`AnyDocConversionError.needsOCR`; no partial Markdown is returned. The error
+message is display text and is not parsed for page metadata. OCR itself remains
+outside this package.
+
+This behavior is staged for the next native release. `Package.swift` continues
+to pin `binary-0.1.4`, which embeds AnyDoc 0.2.3 and may return Markdown that
+omits OCR-required pages, until a new immutable binary is published and pinned.
 
 The package currently does not provide streaming output, progress reporting,
 active-parser interruption, file-path or security-scoped URL handling,

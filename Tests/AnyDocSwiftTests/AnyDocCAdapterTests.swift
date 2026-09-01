@@ -12,7 +12,7 @@ final class AnyDocCAdapterTests: XCTestCase {
   func testLiveAdapterReportsPinnedVersionAndConvertsRealFixtures() throws {
     XCTAssertEqual(
       try AnyDocCAdapter.live.engineVersion(),
-      "AnyDoc 0.2.3 (bf3d33e61731580d1ee1c6a85e56093d715a21a6); AnyDocSwift bridge ABI 1"
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1"
     )
 
     let rtf = try AnyDocCAdapter.live.markdown(
@@ -28,6 +28,21 @@ final class AnyDocCAdapterTests: XCTestCase {
       limits: .standard
     )
     XCTAssertTrue(csv.contains("| padded | comma, inside | 3 |"))
+
+    for fixture in ["pdf/handmade-mixed.pdf", "pdf/handmade-scanned.pdf"] {
+      XCTAssertThrowsError(
+        try AnyDocCAdapter.live.markdown(
+          from: fixtureData(fixture),
+          fileExtension: nil,
+          limits: .standard
+        )
+      ) { error in
+        guard case .needsOCR(let message) = error as? AnyDocConversionError else {
+          return XCTFail("Expected needsOCR, got \(error)")
+        }
+        XCTAssertFalse(message.isEmpty)
+      }
+    }
   }
 
   func testAdapterPassesBytesHintAndLimitsToNativeBridge() throws {
@@ -57,6 +72,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       ("wrapper.inputLimit", .inputTooLarge(actualBytes: 3, maximumBytes: 128)),
       ("wrapper.outputLimit", .outputTooLarge(maximumBytes: 64)),
       ("unsupported", .unsupported("synthetic failure")),
+      ("needsOcr", .needsOCR("synthetic failure")),
       ("malformed", .malformed("synthetic failure")),
       ("encrypted", .encrypted("synthetic failure")),
       ("resourceLimit", .resourceLimit("synthetic failure")),

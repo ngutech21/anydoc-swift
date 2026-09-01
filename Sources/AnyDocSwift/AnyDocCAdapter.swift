@@ -223,6 +223,8 @@ struct AnyDocCAdapter: @unchecked Sendable {
       return .outputTooLarge(maximumBytes: limits.maximumOutputBytes)
     case "unsupported":
       return .unsupported(message)
+    case "needsOcr":
+      return .needsOCR(message)
     case "malformed":
       return .malformed(message)
     case "encrypted":

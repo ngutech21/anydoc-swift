@@ -9,6 +9,7 @@ final class AnyDocConversionErrorTests: XCTestCase {
       .outputTooLarge(maximumBytes: 1),
       .invalidInput("invalid"),
       .unsupported("unsupported"),
+      .needsOCR("OCR required"),
       .malformed("malformed"),
       .encrypted("encrypted"),
       .resourceLimit("resource"),

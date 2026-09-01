@@ -30,6 +30,10 @@
   keeps its bridge dependency private to the Swift implementation target. A
   native change must publish and verify a new immutable archive before updating
   its URL and checksum together.
+- The source-built bridge pins AnyDoc 0.2.4 and maps its `needsOcr` code to the
+  public `needsOCR` error. The published `binary-0.1.4` still contains AnyDoc
+  0.2.3; do not describe ordinary package consumers as upgraded until a new
+  immutable native archive is published and pinned.
 - Native artifacts built from this revision embed the project license and the
   generated third-party notices before signing. The immutable `binary-0.1.4`
   archive contains those resources and is not rewritten; publish a new native

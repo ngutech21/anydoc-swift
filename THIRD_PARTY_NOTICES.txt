@@ -34,7 +34,7 @@ anstyle-query 1.1.5
 Source: https://github.com/rust-cli/anstyle.git
 Declared license: MIT OR Apache-2.0
 
-anydoc 0.2.3
+anydoc 0.2.4
 Source: https://github.com/firecrawl/anydoc
 Declared license: MIT
 
@@ -2137,7 +2137,7 @@ SOFTWARE.
 ===============================================================================
 MIT License (MIT)
 Used by:
-- anydoc 0.2.3
+- anydoc 0.2.4
 
 MIT License
 

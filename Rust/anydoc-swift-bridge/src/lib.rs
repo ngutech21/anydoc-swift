@@ -12,7 +12,7 @@ use std::{ptr, slice, str};
 
 const ABI_VERSION: u32 = 1;
 const ENGINE_VERSION: &[u8] =
-    b"AnyDoc 0.2.3 (bf3d33e61731580d1ee1c6a85e56093d715a21a6); AnyDocSwift bridge ABI 1";
+    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1";
 
 const INVALID_INPUT_CODE: &str = "wrapper.invalidInput";
 const INPUT_LIMIT_CODE: &str = "wrapper.inputLimit";
@@ -347,6 +347,14 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../Tests/Fixtures/csv/handmade-quoted.csv"
     ));
+    const MIXED_PDF_FIXTURE: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/Fixtures/pdf/handmade-mixed.pdf"
+    ));
+    const SCANNED_PDF_FIXTURE: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/Fixtures/pdf/handmade-scanned.pdf"
+    ));
     const RTF_MARKDOWN: &str = concat!(
         "Body before.\n\n",
         "```\n",
@@ -587,6 +595,15 @@ mod tests {
         let with_extension =
             OwnedResult::convert(Some(CSV_FIXTURE), Some(b"csv"), u64::MAX, u64::MAX);
         assert_eq!(with_extension.markdown().as_deref(), Some(CSV_MARKDOWN));
+    }
+
+    #[test]
+    fn pdfs_needing_ocr_fail_without_markdown() {
+        for fixture in [MIXED_PDF_FIXTURE, SCANNED_PDF_FIXTURE] {
+            let result = OwnedResult::convert(Some(fixture), None, u64::MAX, u64::MAX);
+            assert_failure(&result, "needsOcr");
+            assert_eq!(result.markdown(), None);
+        }
     }
 
     #[test]

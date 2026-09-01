@@ -88,7 +88,7 @@ final class FakeNativeBridge: @unchecked Sendable {
   init(
     abiVersion: UInt32 = AnyDocCAdapter.expectedABIVersion,
     versionBytes: [UInt8]? = Array(
-      "AnyDoc 0.2.3 (bf3d33e61731580d1ee1c6a85e56093d715a21a6); AnyDocSwift bridge ABI 1".utf8
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 1".utf8
     ),
     responseProvider: @escaping ResponseProvider = { _ in .success("Markdown") }
   ) {
