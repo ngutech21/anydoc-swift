@@ -38,3 +38,12 @@ Markdown is pinned in the test that consumes the fixture.
 - URL: <https://github.com/firecrawl/anydoc/blob/42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c/tests/fixtures/pdf/handmade-scanned.pdf>
 - SHA-256: `f298b75294aa55400691fb88abb7c30e88fbde4ad04a9a43d809c12b214545c4`
 - License: MIT, inherited from the upstream repository
+
+## `pdf/text.pdf`
+
+- Source: `firecrawl/anydoc` test fixture
+- Revision: `42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c`
+- Upstream path: `tests/fixtures/pdf/text.pdf`
+- URL: <https://github.com/firecrawl/anydoc/blob/42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c/tests/fixtures/pdf/text.pdf>
+- SHA-256: `7d1fd0932634cffa80bf9fb1bd73a6871f82a2cb29b4d7bcfb689927bc5d84e7`
+- License: MIT, inherited from the upstream repository

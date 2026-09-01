@@ -355,6 +355,10 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../Tests/Fixtures/pdf/handmade-scanned.pdf"
     ));
+    const TEXT_PDF_FIXTURE: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/Fixtures/pdf/text.pdf"
+    ));
     const RTF_MARKDOWN: &str = concat!(
         "Body before.\n\n",
         "```\n",
@@ -374,6 +378,48 @@ mod tests {
         "| padded | comma, inside | 3 |\n",
         "| plain | multi line | 4 |\n"
     );
+    const TEXT_PDF_MARKDOWN: &str = r"# Fixture Document
+
+Plain paragraph with **bold**, *italic*, and <s>struck</s> runs. **Style-bold paragraph with a** NotBold-styled span **inside.**
+
+## Lists
+
+1.First numbered
+2.Second numbered
+a)Alpha sub one
+b)Alpha sub two
+i.Roman sub sub
+3.Third numbered Interrupting paragraph between lists.
+4.Fourth, continuing the count IV.Roman starting at four
+V.Roman five •Bullet one •Bullet two ◦Nested bullet
+## Table
+
+Wide head End Tall B2 C2 B3 C3
+
+## Notes and special text
+
+Music clef 𝄞 appears before this footnote¹ reference. i An endnote follows here. Persian with ZWNJ: میخواهم. Family emoji: 👨👩👧. Markdown specials: *stars* _under_ [bracket] `tick` #hash 1. dotted | pipe.
+
+## Links and anchors
+
+External link to example. Relative link to <u>a sibling file</u>. This plain paragraph carries a bookmark. Jump to <u>the bookmarked paragraph</u>.
+
+## Objects
+
+Inline image: done.
+
+### Inside the text box.
+
+Text box: after the box.
+
+## Quote and code
+
+Value below one millionth: 0.0000004 should survive.
+
+1 Footnote after an astral character.
+
+i Endnote body text.
+";
 
     type Accessor = unsafe extern "C" fn(*const AnydocSwiftResult, *mut usize) -> *const u8;
 
@@ -604,6 +650,12 @@ mod tests {
             assert_failure(&result, "needsOcr");
             assert_eq!(result.markdown(), None);
         }
+    }
+
+    #[test]
+    fn text_pdf_converts_to_markdown() {
+        let result = OwnedResult::convert(Some(TEXT_PDF_FIXTURE), None, u64::MAX, u64::MAX);
+        assert_eq!(result.markdown().as_deref(), Some(TEXT_PDF_MARKDOWN));
     }
 
     #[test]

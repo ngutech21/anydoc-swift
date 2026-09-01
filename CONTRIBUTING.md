@@ -72,8 +72,9 @@ Tests are organized around the seams they protect:
 - The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
   its named framework product rather than a shared `include/module.modulemap`
   output.
-- Real RTF and CSV fixtures exercise the pinned AnyDoc engine. Their provenance
-  and hashes are recorded in [`Tests/Fixtures/README.md`](Tests/Fixtures/README.md).
+- Real RTF, CSV, and PDF fixtures exercise the pinned AnyDoc engine. Their
+  provenance and hashes are recorded in
+  [`Tests/Fixtures/README.md`](Tests/Fixtures/README.md).
 
 Tests themselves do not access the network. A clean Cargo build may need
 network access once to resolve the locked crates.io dependency graph.
