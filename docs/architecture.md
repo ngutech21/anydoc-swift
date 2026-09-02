@@ -1,6 +1,6 @@
 # AnyDocSwift Architecture
 
-AnyDocSwift is a macOS Swift package that converts document bytes into
+AnyDocSwift is a Swift package that converts document bytes into
 GitHub-Flavored Markdown. It wraps the Rust
 [`anydoc`](https://github.com/firecrawl/anydoc) engine without exposing Rust or
 C types to applications.
@@ -25,7 +25,7 @@ AnyDocCAdapter (private Swift adapter)
   |
   | length-delimited buffers through ABI version 2
   v
-AnyDocSwiftBridge (dynamic framework with a private Rust runtime)
+AnyDocSwiftBridge (platform-native private binary artifact)
   |
   | content detection and conversion
   v
@@ -38,10 +38,11 @@ Application
 
 There are two distinct build-time experiences:
 
-- Applications consume a checksum-pinned XCFramework through SwiftPM. They do
-  not need Rust, Cargo, or an external process.
-- Contributors can rebuild that XCFramework from the pinned Rust source and
-  toolchain, then test the Swift layer against the local artifact.
+- Applications consume a checksum-pinned platform artifact through SwiftPM.
+  They do not need Rust, Cargo, or an external process.
+- Contributors can rebuild the macOS XCFramework or native Linux artifact
+  bundle from the pinned Rust source and toolchain, then test the Swift layer
+  against that local artifact.
 
 Conversion itself is local and in-process. It does not make network requests.
 
@@ -54,17 +55,20 @@ Conversion itself is local and in-process. It does not make network requests.
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Contains the public actor and error type plus the private Swift-to-C adapter. |
 | [`Native/include/`](../Native/include/) | Defines the versioned C ABI header used by Swift. |
 | [`Native/framework/`](../Native/framework/) | Defines the framework module, bundle metadata, and exact exported-symbol list. |
+| [`Native/linux/`](../Native/linux/) | Defines Linux module metadata, public symbols, native linker requirements, and the pinned build environment. |
 | [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Implements the C ABI, owns native result memory, and calls the pinned AnyDoc engine. |
 | [`THIRD_PARTY_NOTICES.txt`](../THIRD_PARTY_NOTICES.txt) | Records the licenses and attribution notices for the locked native release graph. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, concurrency, cancellation, error mapping, ABI validation, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded documents used for real conversions. |
-| [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains small C and Swift consumers used to validate the packaged framework. |
+| [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains C, Swift, and macOS Rust-composition consumers used to validate packaged native artifacts. |
+| [`Tests/LinuxRustComposition/`](../Tests/LinuxRustComposition/) | Defines the generated two-Rust-static-library Linux coexistence consumer. |
+| [`Scripts/linux-artifact.sh`](../Scripts/linux-artifact.sh) | Builds, namespaces, packages, audits, and tests one native Linux artifact. |
 | [`Examples/AnyDocSwiftExample/`](../Examples/AnyDocSwiftExample/) | Demonstrates a complete command-line consumer. |
 | [`Justfile`](../Justfile) | Provides the supported build, test, packaging, and verification entry points. |
 | [`.github/workflows/`](../.github/workflows/) | Runs CI and the separate native-binary and Swift-package release processes. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Documents contributor setup, validation, and local artifact generation. |
 | [`docs/releasing.md`](releasing.md) | Documents the maintainer-only binary and Swift package release procedures. |
-| [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler, components, and Apple Silicon target used for the bridge. |
+| [`rust-toolchain.toml`](../rust-toolchain.toml) | Pins the Rust compiler and components used for host-native bridge builds. |
 
 SwiftPM is the root project. There is intentionally no root Xcode project.
 
@@ -236,8 +240,14 @@ the metadata so callers can own an OCR workflow, but does not perform OCR.
 
 ### Current platform and feature boundaries
 
-The released binary targets macOS 13 or later on Apple Silicon. The package
-currently works on complete in-memory documents and does not provide:
+The published `0.1.5` package targets macOS 13 or later on Apple Silicon. The
+source tree also supports local native GNU/Linux builds for
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`; ordinary Linux
+consumers remain deliberately disabled until the three immutable
+`binary-0.2.0` assets are published, verified, and pinned. Alpine/musl,
+Windows, Intel macOS, and cross-compilation are outside this contract.
+
+The package works on complete in-memory documents and does not provide:
 
 - OCR;
 - streaming output or progress reporting;
@@ -249,27 +259,49 @@ currently works on complete in-memory documents and does not provide:
 ## Binary distribution model
 
 [`Package.swift`](../Package.swift) exposes the `AnyDocSwift` library and keeps
-`AnyDocSwiftBridge` private to its implementation target. The bridge is a
-remote binary target whose release URL and SHA-256 checksum are pinned together.
-SwiftPM downloads and verifies that archive for ordinary `swift build` and
-`swift test` commands.
+`AnyDocSwiftBridge` private to its implementation target. Manifest evaluation
+selects exactly one binary target for the native host:
 
-Local native development selects a verified XCFramework through the same
-private binary-target seam used by the remote release. The bridge owns its
-`CoreFoundation` and `iconv` dependencies, so the consumer Swift target does
-not declare native system linker settings.
+- macOS arm64 uses a dynamic XCFramework. Keeping the Rust runtime inside that
+  framework preserves process-level symbol isolation from other Rust static
+  libraries.
+- GNU/Linux x86_64 and aarch64 use one target-specific SE-0482
+  `staticLibrary` artifact bundle. The raw archive is first merged into one
+  relocatable object so internal references resolve consistently; every
+  externally visible defined non-ABI ELF symbol is then deterministically
+  prefixed before packaging. Only the nine ABI-v2 C functions remain
+  unprefixed.
+- every other host fails manifest evaluation with an explicit unsupported-host
+  message.
+
+The Linux archive's external system-library requirements are captured from
+Cargo and checked against a committed ordered report. The non-default
+requirements are private, Linux-only linker settings on the Swift
+implementation target. Artifact verification also runs SwiftPM's binary
+artifact audit in the pinned Swift 6.2.4/glibc 2.26 environment.
+
+Local native development selects the verified platform artifact through the
+same private binary-target seam used by a release. The
+`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` switch never changes public behavior and does
+not enable cross-compilation. Until `binary-0.2.0` is actually published and
+pinned, only this local path is accepted on Linux; macOS continues to resolve
+the verified `binary-0.1.5` XCFramework normally.
 
 Native releases and Swift package releases are intentionally separate:
 
-- `binary-X.Y.Z` releases contain an immutable XCFramework archive.
+- `binary-X.Y.Z` releases contain an immutable macOS XCFramework plus separate
+  x86_64 and aarch64 Linux artifact-bundle archives.
 - `X.Y.Z` releases tag a `Package.swift` that points at a published binary URL
-  and checksum.
+  and checksum for each native host.
 
-A native change is released first under a new `binary-` tag. The manifest is
-then updated to that immutable asset and checksum before the Swift package is
-released. The workflows refuse to replace existing tags or releases. Local
-artifact procedures live in [CONTRIBUTING](../CONTRIBUTING.md#native-artifacts),
-and publishing procedures live in [Releasing AnyDocSwift](releasing.md).
+A native change is released first under a new `binary-` tag. All three assets
+are built natively, uploaded to one draft, redownloaded byte-for-byte, and
+reverified before publication. Only then are the three URLs and checksums
+pinned atomically. Normal macOS and Linux consumer builds run with Cargo
+unavailable before the Swift package is released. The workflows refuse to
+replace existing tags or releases. Local artifact procedures live in
+[CONTRIBUTING](../CONTRIBUTING.md#native-artifacts), and publishing procedures
+live in [Releasing AnyDocSwift](releasing.md).
 
 ## Ownership boundaries and invariants
 

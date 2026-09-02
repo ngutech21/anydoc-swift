@@ -1,0 +1,4 @@
+.build
+.git
+.swiftpm
+Rust/anydoc-swift-bridge/target

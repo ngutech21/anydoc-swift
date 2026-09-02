@@ -33,9 +33,8 @@ jobs:
       - name: Install just
         uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
         with:
-          tool: just,cargo-about@0.9.1
+          tool: just,cargo-about@0.9.1,shellcheck
 
-      
       - name: Cache Cargo dependencies and build output
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -46,9 +45,11 @@ jobs:
         run: just ci-rust
 
   swift:
-    name: Swift
+    name: Swift / macOS arm64
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,7 +68,6 @@ jobs:
         with:
           tool: just,cargo-about@0.9.1
 
-
       - name: Cache Cargo dependencies and artifact build output
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -76,3 +76,54 @@ jobs:
 
       - name: Build and test Swift package
         run: just ci-swift
+
+  linux:
+    name: Swift / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            docker_arch: amd64
+            runner_arch: X64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            docker_arch: arm64
+            runner_arch: ARM64
+            target: aarch64-unknown-linux-gnu
+    env:
+      ANYDOC_SWIFT_ARTIFACT_VERSION: 0.2.0
+      ANYDOC_SWIFT_LINUX_TARGET: ${{ matrix.target }}
+      LINUX_BUILD_IMAGE: anydoc-swift-linux:${{ matrix.docker_arch }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_RUNNER_ARCH: ${{ matrix.runner_arch }}
+        run: test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+
+      - name: Build pinned Swift and Rust environment
+        run: |
+          docker build \
+            --platform "linux/${{ matrix.docker_arch }}" \
+            --build-arg "TARGETARCH=${{ matrix.docker_arch }}" \
+            --file Native/linux/Dockerfile \
+            --tag "$LINUX_BUILD_IMAGE" \
+            .
+
+      - name: Build, audit, and test Linux package
+        run: |
+          docker run --rm \
+            --platform "linux/${{ matrix.docker_arch }}" \
+            --env ANYDOC_SWIFT_ARTIFACT_VERSION \
+            --env ANYDOC_SWIFT_LINUX_TARGET \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$LINUX_BUILD_IMAGE" \
+            Scripts/linux-artifact.sh ci

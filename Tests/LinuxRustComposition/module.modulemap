@@ -1,0 +1,4 @@
+module RustUnwindCompanion {
+  header "companion.h"
+  export *
+}

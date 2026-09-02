@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Semantic version without a leading v (for example, 0.1.0)
+        description: Semantic version without a leading v (for example, 0.2.0)
         required: true
         type: string
 
@@ -13,18 +13,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Verify and publish Swift package
-    runs-on: macos-15
-    timeout-minutes: 60
+  validate:
+    name: Validate release request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
     env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       RELEASE_TAG: ${{ inputs.version }}
-
     steps:
-      - name: Validate release request
+      - name: Validate version and branch
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "version must be MAJOR.MINOR.PATCH without a leading v" >&2
@@ -39,6 +37,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Verify manifest release pins
+        run: |
+          expected_assets=(
+            AnyDocSwiftBridge.xcframework.zip
+            AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip
+            AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip
+          )
+          for asset in "${expected_assets[@]}"; do
+            grep -Fq "/binary-$RELEASE_TAG/$asset" Package.swift
+          done
+          url_count="$(grep -Fc "/binary-$RELEASE_TAG/" Package.swift || true)"
+          checksum_count="$(grep -Fc 'checksum:' Package.swift || true)"
+          test "$url_count" = "3"
+          test "$checksum_count" = "3"
+          test "$(sed -n 's/.*checksum: "\([0-9a-f]\{64\}\)".*/\1/p' Package.swift | wc -l | tr -d ' ')" = "3"
 
       - name: Refuse an existing release or tag
         env:
@@ -63,6 +77,21 @@ jobs:
             fi
           fi
 
+  verify-macos:
+    name: Verify macOS package and remote consumer
+    needs: validate
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Report pinned toolchains
         run: |
           test "$(uname -m)" = "arm64"
@@ -74,17 +103,119 @@ jobs:
       - name: Install build tools
         uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
         with:
-          tool: just,cargo-about@0.9.1
+          tool: just,cargo-about@0.9.1,shellcheck
 
-      - name: Run continuous integration checks
-        run: just ci
+      - name: Install pinned actionlint
+        env:
+          ACTIONLINT_ARCHIVE_SHA256: aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          install_directory="$RUNNER_TEMP/actionlint-bin"
+          curl --proto '=https' --tlsv1.2 -fsSLo "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_darwin_arm64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_ARCHIVE_SHA256" "$archive" \
+            | shasum -a 256 --check
+          mkdir -p "$install_directory"
+          tar -xzf "$archive" -C "$install_directory" actionlint
+          echo "$install_directory" >> "$GITHUB_PATH"
 
-      - name: Test the published binary dependency
+      - name: Run complete local validation
+        run: just final-check
+
+      - name: Test published binary dependency without Cargo
         run: |
           xcrun swift package reset
+          consumer_path="/usr/bin:/bin:/usr/sbin:/sbin"
+          export PATH="$consumer_path"
+          if command -v cargo >/dev/null 2>&1; then
+            echo "Cargo must be unavailable during remote-consumer verification" >&2
+            exit 1
+          fi
           xcrun swift build
           xcrun swift build -c release
           xcrun swift test
+
+  verify-linux:
+    name: Verify remote consumer / ${{ matrix.target }}
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            docker_arch: amd64
+            runner_arch: X64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            docker_arch: arm64
+            runner_arch: ARM64
+            target: aarch64-unknown-linux-gnu
+    env:
+      SWIFT_BASE_IMAGE: swift:6.2.4-amazonlinux2@sha256:cf1e50d44fbb470cb8b7ab481a76b49b8a58fa4fdc1b6995a3582849453e64f9
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_RUNNER_ARCH: ${{ matrix.runner_arch }}
+        run: test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+
+      - name: Test published binary dependency without Cargo
+        run: |
+          docker run --rm \
+            --platform "linux/${{ matrix.docker_arch }}" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$SWIFT_BASE_IMAGE" \
+            bash -euo pipefail -c '
+              test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.26"
+              swift --version | grep -F "Swift version 6.2.4"
+              ! command -v cargo >/dev/null 2>&1
+              swift package reset
+              swift build
+              swift build -c release
+              swift test
+            '
+
+  publish:
+    name: Publish Swift package
+    needs:
+      - validate
+      - verify-macos
+      - verify-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.version }}
+    steps:
+      - name: Recheck release and tag availability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -z "$(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id"
+          )"
+          if git ls-remote --exit-code --tags \
+            "https://github.com/$GITHUB_REPOSITORY.git" \
+            "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "tag $RELEASE_TAG was created while verification was running" >&2
+            exit 1
+          else
+            status=$?
+            test "$status" -eq 2
+          fi
 
       - name: Publish GitHub release
         env:

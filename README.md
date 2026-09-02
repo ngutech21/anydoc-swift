@@ -3,7 +3,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/ngutech21/anydoc-swift/ci.yml?branch=master&event=push&label=CI)](https://github.com/ngutech21/anydoc-swift/actions/workflows/ci.yml)
 
 AnyDocSwift converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
-and CSV data into GitHub-Flavored Markdown in macOS Swift applications.
+and CSV data into GitHub-Flavored Markdown in Swift applications.
 Conversion runs locally and in-process through the Rust
 [Firecrawl anydoc](https://github.com/firecrawl/anydoc) engine. Applications
 install the package through SwiftPM and do not need Rust, Cargo, or an external
@@ -16,10 +16,15 @@ It does not reimplement AnyDoc's parsers or conversion logic.
 This independent community project is not affiliated with, endorsed by, or maintained by
 Firecrawl.
 
-## Requirements
+## Requirements and release status
 
-- macOS 13 or later on Apple Silicon
-- Swift 6.1 or later
+- Swift 6.2 or later
+- macOS 13 or later on Apple Silicon for the published `0.1.5` release
+
+The source tree stages native GNU/Linux artifact support for `x86_64` and
+`aarch64`, but it is not yet part of a published Swift package release. It will
+become consumer-facing only after the immutable `binary-0.2.0` assets are
+published, independently verified, and checksum-pinned in `Package.swift`.
 
 ## Installation
 
@@ -30,7 +35,7 @@ Add AnyDocSwift to your Swift package dependencies and include the
 dependencies: [
   .package(
     url: "https://github.com/ngutech21/anydoc-swift.git",
-    exact: "0.1.4"
+    exact: "0.1.5"
   )
 ],
 targets: [
@@ -44,7 +49,7 @@ targets: [
 ```
 
 In Xcode, choose **File > Add Package Dependencies**, enter
-`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.4`, and
+`https://github.com/ngutech21/anydoc-swift.git`, select version `0.1.5`, and
 add the `AnyDocSwift` library to your application target.
 
 SwiftPM downloads and verifies the checksum-pinned native artifact
@@ -143,9 +148,8 @@ returned. `pages` contains sorted, unique, one-based page numbers, while
 `pageCount` is the total PDF page count. This lets callers own the OCR workflow
 without parsing display text; OCR itself remains outside this package.
 
-This behavior is staged for the next native release. `Package.swift` continues
-to pin `binary-0.1.4`, which embeds AnyDoc 0.2.3 and may return Markdown that
-omits OCR-required pages, until a new immutable binary is published and pinned.
+The published `binary-0.1.5` bridge has been independently reverified as AnyDoc
+0.2.4 with bridge ABI version 2, including this structured OCR behavior.
 
 The package currently does not provide streaming output, progress reporting,
 active-parser interruption, file-path or security-scoped URL handling,
@@ -168,7 +172,7 @@ bridge incorporates third-party Rust crates whose exact licenses and
 attribution notices are recorded in
 [`THIRD_PARTY_NOTICES.txt`](THIRD_PARTY_NOTICES.txt).
 
-The checksum-pinned `binary-0.1.4` archive embeds both files in the signed
+The checksum-pinned `binary-0.1.5` archive embeds both files in the signed
 framework's `Resources` directory. Distributors must retain those resources
 when copying or embedding the framework. Notice maintenance is documented in
 [CONTRIBUTING](CONTRIBUTING.md#dependency-and-abi-changes).

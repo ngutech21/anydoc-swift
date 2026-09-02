@@ -37,9 +37,12 @@ verified_framework_binary := verified_framework_version_root + "/" + framework_n
 verified_headers := verified_framework_version_root + "/Headers"
 verified_modules := verified_framework_version_root + "/Modules"
 verified_resources := verified_framework_version_root + "/Resources"
+composition_probe_library := verify_root + "/librust_staticlib_probe.a"
 swift_scratch := root + "/.build/swift"
 xcode_scratch := root + "/.build/xcode-package-smoke"
 xcode_product_framework := xcode_scratch + "/Build/Products/Debug/" + framework_name + ".framework"
+linux_artifact_script := root + "/Scripts/linux-artifact.sh"
+linux_build_image := "anydoc-swift-linux:local"
 
 default:
     @just --list
@@ -47,6 +50,7 @@ default:
 # Check Rust formatting and lints with the pinned dependency graph.
 lint-rust:
     cd "{{ crate }}" && cargo fmt --check
+    rustfmt --check "{{ root }}/Tests/ArtifactSmoke/rust_staticlib_probe.rs"
     cd "{{ crate }}" && cargo clippy --locked --all-targets -- -D warnings
 
 # Build the Rust bridge package on the host platform.
@@ -78,15 +82,20 @@ _generate-licenses output metadata:
     cd "{{ crate }}" && cargo about generate --config "{{ license_config }}" --manifest-path Cargo.toml --locked --fail --output-file "{{ output }}" "{{ license_template }}"
     test -s "{{ output }}"
 
-# Run every Rust check used by continuous integration.
-ci-rust: lint-rust build-rust test-rust check-licenses
+# Check the Linux artifact implementation without executing it.
+lint-shell:
+    bash -n "{{ linux_artifact_script }}"
+    shellcheck "{{ linux_artifact_script }}"
+
+# Run every Rust and native-tooling check used by continuous integration.
+ci-rust: lint-rust lint-shell build-rust test-rust check-licenses
 
 # Check Swift formatting without modifying sources.
 lint-swift:
-    xcrun swift format lint --strict --recursive Package.swift Sources Tests
+    if [[ "$(uname -s)" = "Darwin" ]]; then xcrun swift format lint --strict --recursive Package.swift Sources Tests; else swift format lint --strict --recursive Package.swift Sources Tests; fi
 
 # Build and package the release XCFramework with the standard Cargo and Xcode tools.
-build-artifact: check-licenses
+build-artifact-macos: check-licenses
     test "$(uname -m)" = "arm64"
     mkdir -p "{{ cargo_target }}" "$(dirname "{{ artifact_archive }}")"
     rm -rf "{{ framework }}" "{{ xcframework }}" "{{ artifact_archive }}" "{{ native_static_libs_log }}"
@@ -112,7 +121,7 @@ build-artifact: check-licenses
     swift package compute-checksum "{{ artifact_archive }}"
 
 # Verify an XCFramework archive and smoke-test it without Cargo on PATH.
-verify-artifact archive=artifact_archive:
+verify-artifact-macos archive=artifact_archive:
     rm -rf "{{ verify_root }}"
     mkdir -p "{{ verify_root }}"
     ditto -x -k "{{ archive }}" "{{ verify_root }}"
@@ -161,19 +170,24 @@ verify-artifact archive=artifact_archive:
     env PATH=/usr/bin:/bin:/usr/sbin:/sbin "{{ verify_root }}/c-smoke"
     env PATH=/usr/bin:/bin:/usr/sbin:/sbin xcrun swiftc "{{ root }}/Tests/ArtifactSmoke/main.swift" -module-cache-path "{{ verify_root }}/module-cache" -F "{{ verified_slice }}" -framework "{{ framework_name }}" -Xlinker -rpath -Xlinker "{{ verified_slice }}" -target arm64-apple-macosx{{ deployment_target }} -o "{{ verify_root }}/swift-smoke"
     env PATH=/usr/bin:/bin:/usr/sbin:/sbin "{{ verify_root }}/swift-smoke"
+    MACOSX_DEPLOYMENT_TARGET={{ deployment_target }} rustc "{{ root }}/Tests/ArtifactSmoke/rust_staticlib_probe.rs" --crate-name rust_staticlib_probe --crate-type staticlib --edition 2024 --target {{ target }} -C panic=unwind -C opt-level=3 -o "{{ composition_probe_library }}"
+    llvm_nm="$(rustc --print sysroot)/lib/rustlib/{{ target }}/bin/llvm-nm"; test -x "$llvm_nm"; "$llvm_nm" --defined-only --extern-only --format=just-symbols "{{ composition_probe_library }}" 2>/dev/null | grep -Fx '_rust_eh_personality'
+    env PATH=/usr/bin:/bin:/usr/sbin:/sbin xcrun clang "{{ root }}/Tests/ArtifactSmoke/composition.c" "{{ composition_probe_library }}" -mmacosx-version-min={{ deployment_target }} -F "{{ verified_slice }}" -framework "{{ framework_name }}" -Wl,-rpath,"{{ verified_slice }}" -o "{{ verify_root }}/rust-composition-smoke"
+    xcrun nm -gU "{{ verify_root }}/rust-composition-smoke" | awk '$NF == "_rust_eh_personality" { found = 1 } END { exit found ? 0 : 1 }'
+    env PATH=/usr/bin:/bin:/usr/sbin:/sbin "{{ verify_root }}/rust-composition-smoke"
     swift package compute-checksum "{{ archive }}"
 
 # Build the Swift package in debug and release configurations against the verified local bridge.
-build-swift: artifact
+build-swift-macos: artifact-macos
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift build --scratch-path "{{ swift_scratch }}"
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift build --scratch-path "{{ swift_scratch }}" -c release
 
 # Test the Swift package against the verified local bridge.
-test-swift: artifact
+test-swift-macos: artifact-macos
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift test --scratch-path "{{ swift_scratch }}"
 
 # Process the dynamic XCFramework through Xcode's Swift-package build graph.
-verify-xcode-package: verify-artifact
+verify-xcode-package: verify-artifact-macos
     rm -rf "{{ xcode_scratch }}"
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcodebuild -quiet -scheme AnyDocSwift -destination 'generic/platform=macOS' -derivedDataPath "{{ xcode_scratch }}" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
     test -d "{{ xcode_product_framework }}"
@@ -182,16 +196,93 @@ verify-xcode-package: verify-artifact
     cmp "{{ third_party_notices }}" "{{ xcode_product_framework }}/Versions/{{ framework_version_directory }}/Resources/ThirdPartyNotices.txt"
     codesign --verify --deep --strict --verbose=2 "{{ xcode_product_framework }}"
 
-# Build, package, and verify the native release artifact.
-artifact: build-artifact verify-artifact verify-xcode-package
+# Build, package, and verify the macOS native release artifact.
+artifact-macos: build-artifact-macos verify-artifact-macos verify-xcode-package
 
-# Run every Swift check used by continuous integration.
-ci-swift: lint-swift build-swift test-swift
+# Build the native Linux artifact for the current GNU host architecture.
+build-artifact-linux:
+    "{{ linux_artifact_script }}" build
+
+# Package the native Linux bridge for the current GNU host architecture.
+package-artifact-linux:
+    "{{ linux_artifact_script }}" package
+
+# Run SwiftPM's binary-artifact audit on a Linux archive.
+audit-artifact-linux archive="":
+    if [[ -n "{{ archive }}" ]]; then "{{ linux_artifact_script }}" audit "{{ archive }}"; else "{{ linux_artifact_script }}" audit; fi
+
+# Run the Cargo-free C and Swift smoke consumers against a Linux archive.
+smoke-artifact-linux archive="":
+    if [[ -n "{{ archive }}" ]]; then "{{ linux_artifact_script }}" smoke "{{ archive }}"; else "{{ linux_artifact_script }}" smoke; fi
+
+# Verify a Linux artifact archive, including its audit and native smoke tests.
+verify-artifact-linux archive="":
+    if [[ -n "{{ archive }}" ]]; then "{{ linux_artifact_script }}" verify "{{ archive }}"; else "{{ linux_artifact_script }}" verify; fi
+
+# Build, package, audit, and verify the native Linux release artifact.
+artifact-linux:
+    "{{ linux_artifact_script }}" artifact
+
+# Build Swift in debug and release modes against the packaged Linux bridge.
+build-swift-linux: artifact-linux
+    "{{ linux_artifact_script }}" build-swift
+
+# Run the complete Swift test suite against the packaged Linux bridge.
+test-swift-linux: artifact-linux
+    "{{ linux_artifact_script }}" test-swift
+
+# Prove coexistence with a second unwind-enabled Rust static library.
+verify-linux-coexistence: artifact-linux
+    "{{ linux_artifact_script }}" composition
+
+# Run every Linux Swift and native-artifact check used by continuous integration.
+ci-swift-linux: lint-swift artifact-linux
+    "{{ linux_artifact_script }}" build-swift
+    "{{ linux_artifact_script }}" test-swift
+    "{{ linux_artifact_script }}" composition
+
+# Build the digest-pinned native Linux toolchain image for the current architecture.
+build-linux-environment:
+    test "$(uname -s)" = "Linux"; case "$(uname -m)" in x86_64) docker_arch=amd64 ;; aarch64 | arm64) docker_arch=arm64 ;; *) echo "unsupported Linux architecture: $(uname -m)" >&2; exit 1 ;; esac; docker build --platform "linux/$docker_arch" --build-arg "TARGETARCH=$docker_arch" --file "{{ root }}/Native/linux/Dockerfile" --tag "{{ linux_build_image }}" "{{ root }}"
+
+# Build and verify Linux artifacts in the pinned glibc 2.26 environment.
+artifact-linux-container: build-linux-environment
+    case "$(uname -m)" in x86_64) docker_arch=amd64 ;; aarch64 | arm64) docker_arch=arm64 ;; *) exit 1 ;; esac; docker run --rm --platform "linux/$docker_arch" --env ANYDOC_SWIFT_ARTIFACT_VERSION --volume "{{ root }}:/workspace" --workdir /workspace "{{ linux_build_image }}" Scripts/linux-artifact.sh artifact
+
+# Run Linux Swift and artifact CI in the pinned glibc 2.26 environment.
+ci-swift-linux-container: build-linux-environment
+    case "$(uname -m)" in x86_64) docker_arch=amd64 ;; aarch64 | arm64) docker_arch=arm64 ;; *) exit 1 ;; esac; docker run --rm --platform "linux/$docker_arch" --env ANYDOC_SWIFT_ARTIFACT_VERSION --volume "{{ root }}:/workspace" --workdir /workspace "{{ linux_build_image }}" Scripts/linux-artifact.sh ci-swift
+
+# Select the native artifact recipe for the current host.
+artifact:
+    if [[ "$(uname -s)" = "Darwin" ]]; then just artifact-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just artifact-linux-container; else echo "unsupported artifact host: $(uname -s)" >&2; exit 1; fi
+
+# Select the artifact verifier for the current host.
+verify-artifact archive="":
+    if [[ "$(uname -s)" = "Darwin" ]]; then if [[ -n "{{ archive }}" ]]; then just verify-artifact-macos "{{ archive }}"; else just verify-artifact-macos; fi; elif [[ "$(uname -s)" = "Linux" ]]; then if [[ -n "{{ archive }}" ]]; then just verify-artifact-linux "{{ archive }}"; else just verify-artifact-linux; fi; else echo "unsupported artifact host: $(uname -s)" >&2; exit 1; fi
+
+# Build Swift for the current host against its packaged local bridge.
+build-swift:
+    if [[ "$(uname -s)" = "Darwin" ]]; then just build-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just build-swift-linux; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
+
+# Test Swift for the current host against its packaged local bridge.
+test-swift:
+    if [[ "$(uname -s)" = "Darwin" ]]; then just test-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just test-swift-linux; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
+
+# Run every Swift check used by continuous integration on the current host.
+ci-swift:
+    if [[ "$(uname -s)" = "Darwin" ]]; then just ci-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just ci-swift-linux-container; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
+
+# Run every macOS Swift check used by continuous integration.
+ci-swift-macos: lint-swift build-swift-macos test-swift-macos
 
 # Run all continuous-integration checks locally.
-ci: ci-rust ci-swift
+ci:
+    just ci-rust
+    just ci-swift
 
 # Run every local validation gate before submitting a change.
 final-check:
     actionlint
+    git diff --check
     just ci
