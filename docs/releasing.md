@@ -81,6 +81,10 @@ because GitHub restricts unpublished draft releases to callers with push
 access. They use this permission to list and download draft assets; the
 workflow default remains `contents: read`.
 
+Draft creation captures the release ID directly from the API response. Asset
+uploads and subsequent verification use that ID without rediscovering the draft
+through the releases list.
+
 Record the three checksums from the release notes. Do not update
 `Package.swift` before this workflow succeeds.
 

@@ -315,20 +315,36 @@ jobs:
               printf -- "- \`%s\`: \`%s\`\n" "$asset_name" "$checksum"
             done
           } > "$notes_file"
-          gh release create "$RELEASE_TAG" "$ASSET_DIRECTORY"/*.zip \
-            --verify-tag \
-            --draft \
-            --latest=false \
-            --notes-file "$notes_file" \
-            --title "$RELEASE_TAG (AnyDoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)"
-          release_ids="$(
-            gh api --paginate \
-              "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-              --jq ".[] | select(.draft == true and .tag_name == \"$RELEASE_TAG\") | .id"
+          # Use the creation response so draft discovery cannot race the release list.
+          release_id="$(
+            gh api --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$GITHUB_SHA" \
+              -F draft=true \
+              -f make_latest=false \
+              -F body="@$notes_file" \
+              -f name="$RELEASE_TAG (AnyDoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)" \
+              --jq '.id'
           )"
-          release_count="$(printf '%s\n' "$release_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
-          test "$release_count" = "1"
-          echo "release_id=$release_ids" >> "$GITHUB_OUTPUT"
+          if [[ ! "$release_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "release creation returned an invalid ID: $release_id" >&2
+            exit 1
+          fi
+          echo "Created draft release $release_id for $RELEASE_TAG"
+          for archive in "$ASSET_DIRECTORY"/*.zip; do
+            asset_name="${archive##*/}"
+            gh api --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "Content-Type: application/zip" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$asset_name" \
+              --input "$archive" \
+              >/dev/null
+          done
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
   verify-macos:
     name: Verify downloaded macOS draft asset
