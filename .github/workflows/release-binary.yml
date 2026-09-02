@@ -335,6 +335,9 @@ jobs:
     needs: draft
     runs-on: macos-26
     timeout-minutes: 30
+    permissions:
+      # GitHub requires push access to read unpublished draft release assets.
+      contents: write
     env:
       ASSET_NAME: AnyDocSwiftBridge.xcframework.zip
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
@@ -390,6 +393,9 @@ jobs:
     needs: draft
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    permissions:
+      # GitHub requires push access to read unpublished draft release assets.
+      contents: write
     strategy:
       fail-fast: false
       matrix:

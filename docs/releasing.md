@@ -76,6 +76,11 @@ The workflow:
 7. publishes only after all three native reverification jobs succeed, then
    confirms that the release is immutable.
 
+The draft asset verification jobs need `contents: write` on `GITHUB_TOKEN`
+because GitHub restricts unpublished draft releases to callers with push
+access. They use this permission to list and download draft assets; the
+workflow default remains `contents: read`.
+
 Record the three checksums from the release notes. Do not update
 `Package.swift` before this workflow succeeds.
 
