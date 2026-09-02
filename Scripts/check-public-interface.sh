@@ -52,7 +52,7 @@ mkdir -p "$module_cache" "$symbol_graphs"
 "${extractor[@]}" \
   -module-name AnyDocSwift \
   -target "$target" \
-  "${sdk_arguments[@]}" \
+  ${sdk_arguments[@]+"${sdk_arguments[@]}"} \
   -module-cache-path "$module_cache" \
   -I "$module_directory" \
   "${bridge_arguments[@]}" \
