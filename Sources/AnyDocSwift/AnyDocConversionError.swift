@@ -1,9 +1,10 @@
 import Foundation
 
-/// A typed failure produced while converting document bytes to Markdown.
+/// A typed failure produced while converting document bytes.
 public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
   case inputTooLarge(actualBytes: UInt64, maximumBytes: UInt64)
   case outputTooLarge(maximumBytes: UInt64)
+  case documentTooLarge(maximumBytes: UInt64)
   case invalidInput(String)
   case unsupported(String)
   /// The sorted, unique, one-based pages requiring OCR and total PDF page count.
@@ -22,6 +23,8 @@ public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {
       "Input is \(actualBytes) bytes, exceeding the \(maximumBytes)-byte limit."
     case .outputTooLarge(let maximumBytes):
       "Converted Markdown exceeds the \(maximumBytes)-byte output limit."
+    case .documentTooLarge(let maximumBytes):
+      "Structured document exceeds the \(maximumBytes)-byte wire-result limit."
     case .invalidInput(let message):
       "Invalid document input: \(message)"
     case .unsupported(let message):

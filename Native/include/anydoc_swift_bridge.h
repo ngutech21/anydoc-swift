@@ -19,18 +19,45 @@ const uint8_t *anydoc_swift_engine_version(
 anydoc_swift_result_t *anydoc_swift_convert_markdown(
     const uint8_t *bytes,
     size_t bytes_length,
-    const uint8_t *extension_utf8,
-    size_t extension_length,
+    const uint8_t *format_utf8,
+    size_t format_length,
     uint64_t maximum_input_bytes,
     uint64_t maximum_output_bytes
 );
 
-int32_t anydoc_swift_result_is_success(
+anydoc_swift_result_t *anydoc_swift_convert_document(
+    const uint8_t *bytes,
+    size_t bytes_length,
+    const uint8_t *format_utf8,
+    size_t format_length,
+    uint64_t maximum_input_bytes,
+    uint64_t maximum_document_bytes
+);
+
+/* Returns -1 for null, 0 for failure, 1 for Markdown, or 2 for document. */
+int32_t anydoc_swift_result_kind(
     const anydoc_swift_result_t *result
 );
 
 const uint8_t *anydoc_swift_result_markdown(
     const anydoc_swift_result_t *result,
+    size_t *out_length
+);
+
+const uint8_t *anydoc_swift_result_document_manifest(
+    const anydoc_swift_result_t *result,
+    size_t *out_length
+);
+
+/*
+ * Returns 1 for a valid asset index, including an empty asset, and 0 for a
+ * mismatch or out-of-range index. Both outputs are reset on failure. Borrowed
+ * bytes remain valid only until the result is freed.
+ */
+int32_t anydoc_swift_result_document_asset(
+    const anydoc_swift_result_t *result,
+    size_t index,
+    const uint8_t **out_bytes,
     size_t *out_length
 );
 

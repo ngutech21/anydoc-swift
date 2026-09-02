@@ -15,7 +15,7 @@ struct AnyDocSwiftExample {
     let converter = AnyDocConverter()
     let markdown = try await converter.markdown(
       from: data,
-      fileExtension: url.pathExtension
+      format: AnyDocFormat(fileExtension: url.pathExtension)
     )
     print(markdown)
   }

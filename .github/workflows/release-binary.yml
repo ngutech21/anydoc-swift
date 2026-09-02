@@ -1,5 +1,9 @@
 name: Release Binary
 
+env:
+  EMBEDDED_ANYDOC_VERSION: 0.2.4
+  BRIDGE_ABI_VERSION: 3
+
 on:
   workflow_dispatch:
     inputs:
@@ -63,6 +67,13 @@ jobs:
             fi
           fi
 
+      - name: Verify embedded release metadata
+        run: |
+          grep -Fq "const ABI_VERSION: u32 = $BRIDGE_ABI_VERSION;" \
+            Rust/anydoc-swift-bridge/src/lib.rs
+          grep -Fq "b\"AnyDoc $EMBEDDED_ANYDOC_VERSION (" \
+            Rust/anydoc-swift-bridge/src/lib.rs
+
   macos:
     name: Build macOS arm64 artifact
     needs: validate
@@ -94,6 +105,7 @@ jobs:
       - name: Build and verify release artifact
         run: |
           just artifact-macos
+          Scripts/memory-probe.sh
           test -f "$ARCHIVE_PATH"
           checksum="$(swift package compute-checksum "$ARCHIVE_PATH")"
           printf '%s  %s\n' "$checksum" "$ASSET_NAME" > "$ARCHIVE_PATH.sha256"
@@ -160,7 +172,10 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             "$LINUX_BUILD_IMAGE" \
-            Scripts/linux-artifact.sh ci
+            bash -euo pipefail -c '
+              Scripts/linux-artifact.sh ci
+              Scripts/linux-artifact.sh memory-probe
+            '
           test -f "$ARCHIVE_PATH"
           checksum="$(sha256sum "$ARCHIVE_PATH" | awk '{ print $1 }')"
           printf '%s  %s\n' "$checksum" "$ASSET_NAME" > "$ARCHIVE_PATH.sha256"
@@ -286,6 +301,8 @@ jobs:
         run: |
           notes_file="$RUNNER_TEMP/release-notes.md"
           {
+            echo "Embeds AnyDoc $EMBEDDED_ANYDOC_VERSION with bridge ABI v$BRIDGE_ABI_VERSION."
+            echo
             echo 'SwiftPM checksums (SHA-256):'
             echo
             for checksum_file in "$ASSET_DIRECTORY"/*.zip.sha256; do
@@ -298,7 +315,7 @@ jobs:
             --draft \
             --latest=false \
             --notes-file "$notes_file" \
-            --title "$RELEASE_TAG"
+            --title "$RELEASE_TAG (AnyDoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)"
           release_ids="$(
             gh api --paginate \
               "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
@@ -361,6 +378,7 @@ jobs:
           expected_checksum="$(awk '{ print $1 }' ".build/original/$ASSET_NAME.sha256")"
           test "$(swift package compute-checksum "$downloaded")" = "$expected_checksum"
           just verify-artifact-macos "$downloaded"
+          Scripts/memory-probe.sh
 
   verify-linux:
     name: Verify downloaded ${{ matrix.target }} draft asset
@@ -439,6 +457,7 @@ jobs:
               Scripts/linux-artifact.sh build-swift
               Scripts/linux-artifact.sh test-swift
               Scripts/linux-artifact.sh composition
+              Scripts/linux-artifact.sh memory-probe
             '
 
   publish:

@@ -7,6 +7,7 @@ final class AnyDocConversionErrorTests: XCTestCase {
     let errors: [AnyDocConversionError] = [
       .inputTooLarge(actualBytes: 2, maximumBytes: 1),
       .outputTooLarge(maximumBytes: 1),
+      .documentTooLarge(maximumBytes: 1),
       .invalidInput("invalid"),
       .unsupported("unsupported"),
       .needsOCR(pages: [2], pageCount: 3),

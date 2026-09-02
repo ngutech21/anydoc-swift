@@ -5,7 +5,7 @@
 int32_t rust_staticlib_probe(int32_t value);
 
 int main(void) {
-  if (anydoc_swift_abi_version() != 2) {
+  if (anydoc_swift_abi_version() != 3) {
     return 1;
   }
   if (rust_staticlib_probe(7) != 8) {

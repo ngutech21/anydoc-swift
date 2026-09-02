@@ -19,6 +19,7 @@ macOS 13 or later, or a native `x86_64`/`aarch64` GNU/Linux host. Install:
 - the toolchain pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
 - [`just`](https://github.com/casey/just);
 - `jq`;
+- Python 3 (for deterministic release memory fixtures);
 - `actionlint`;
 - `shellcheck`; and
 - `cargo-about 0.9.1`.
@@ -59,6 +60,9 @@ just check-licenses
 # Build, package, and verify the native release archive for this host.
 just artifact
 
+# Run the non-default Release memory qualification used by binary releases.
+just memory-probe
+
 # Run platform-specific artifact paths explicitly.
 just artifact-macos
 just artifact-linux-container
@@ -71,19 +75,26 @@ completed change, and report the exact result of every claimed verifier.
 
 Tests are organized around the seams they protect:
 
-- Rust tests cover raw-buffer validation, detection, limits, error codes,
-  result invariants, panic containment, and the exported ABI.
-- Swift adapter tests cover ABI and UTF-8 validation, error translation,
-  output bounds, malformed native results, and result cleanup.
-- Public actor tests cover normalization, limits, FIFO execution, independent
-  concurrency, main-actor responsiveness, and cancellation at each stage.
+- Rust tests cover every transport variant, schema output, canonical/automatic
+  format selection, limits, error codes, result-kind/accessor invariants, empty
+  assets, repeated references, panic containment, and the exported ABI.
+- Swift adapter/decoder tests cover ABI and UTF-8 validation, error translation,
+  both output bounds, unknown schema/tags, invalid numbers/tables/assets,
+  malformed payload kinds, defensive copies, and exactly-once cleanup.
+- Public actor tests cover both result modes, shared input checks, mixed FIFO
+  execution, independent concurrency, main-actor responsiveness, and queued or
+  active cancellation.
+- Public format tests cover all pinned extension aliases, ASCII case matching,
+  rejected inputs, unchanged raw values, and real conversions using lookup
+  results in both output modes. Keep this table aligned with the pinned
+  upstream `Format::from_extension` when upgrading AnyDoc.
 - Artifact smoke tests prove that packaged C and Swift consumers can link and
   run without Cargo on `PATH`; artifact and Xcode-package verification also
   prove that the project license and third-party notices survive packaging.
 - macOS artifact verification also links the dynamic framework beside an
   independent unwind-enabled Rust static library and runs both ABIs.
 - Linux verification checks the exact ELF architecture, artifact metadata,
-  module map, ABI/engine versions, nine public functions, symbol namespace,
+  module map, ABI/engine versions, 12 public functions, symbol namespace,
   native-library report, SwiftPM artifact audit, and archive checksum.
 - A generated Linux SwiftPM consumer links AnyDocSwift with a second
   unwind-enabled Rust static library and performs a real conversion, proving
@@ -91,8 +102,13 @@ Tests are organized around the seams they protect:
 - The Xcode package smoke proves that `ProcessXCFramework` places the bridge in
   its named framework product rather than a shared `include/module.modulemap`
   output.
-- Real RTF, CSV, and PDF fixtures exercise the pinned AnyDoc engine. Their
-  provenance and hashes are recorded in
+- A generated public symbol graph proves that no C/Rust bridge declaration is
+  exported by the Swift module.
+- The non-default binary-release qualification builds a public consumer in
+  Release mode, warms deterministic asset-heavy and manifest-heavy DOCX inputs,
+  then checks three runs of each against a 512 MiB peak-RSS ceiling.
+- Real RTF, CSV, PDF, structure-rich DOCX, and EPUB table fixtures exercise the
+  pinned AnyDoc engine. Their provenance and hashes are recorded in
   [`Tests/Fixtures/README.md`](Tests/Fixtures/README.md).
 
 Tests themselves do not access the network. A clean Cargo build may need
@@ -113,7 +129,7 @@ current host.
    locked Cargo graph.
 3. Use Cargo's reported native link requirements to link that archive into a
    versioned, non-mergeable dynamic framework with a controlled `@rpath`
-   install name and exactly nine exported C symbols.
+   install name and exactly 12 exported C symbols.
 4. Copy the project license and third-party notices into the framework before
    signing it.
 5. Package the framework as an XCFramework ZIP and compute its SwiftPM
@@ -144,7 +160,7 @@ For the current native architecture, the path:
    from [`Native/linux/native-static-libs.txt`](Native/linux/native-static-libs.txt);
 3. merges the archive into one relocatable ELF object, then uses the pinned
    `llvm-objcopy` to deterministically prefix every externally visible defined
-   symbol except the nine ABI-v2 functions and verifies that no old internal
+   symbol except the 12 ABI-v3 functions and verifies that no old internal
    reference remains;
 4. packages the archive, portable C header, plain module map, license, notices,
    link report, and symbol map as one target-specific `staticLibrary` artifact
@@ -155,7 +171,8 @@ For the current native architecture, the path:
    final ZIP (the x86_64 invocation supplies an audit-only Clang library path
    because the pinned image exposes `libm.a` as a GNU linker script rather than
    an object archive); and
-7. runs debug/release Swift builds, the full test suite, and the independent
+7. runs debug/release Swift builds, public-interface extraction, the full test
+   suite, and the independent
    two-Rust-library composition consumer with Cargo removed from `PATH`.
 
 The ignored outputs are:
@@ -181,7 +198,9 @@ intentional upgrade unit.
 - Pointer, result-ownership, detection, or AnyDoc integration changes require
   focused Rust and Swift-adapter tests.
 - An ABI change must update the C header, Rust exports, Swift adapter, ABI
-  version, smoke tests, and native binary release together.
+  version, symbol-graph and memory gates, smoke tests, and native binary release
+  together. ABI v3 belongs to one 0.2.0 artifact set; do not publish an
+  intermediate subset.
 - An AnyDoc upgrade must update the exact Cargo dependency, lockfile, embedded
   version and revision, fixture expectations, generated third-party notices,
   and released platform artifacts intentionally.

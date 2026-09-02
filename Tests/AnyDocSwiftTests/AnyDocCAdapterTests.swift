@@ -4,6 +4,9 @@ import XCTest
 @testable import AnyDocSwift
 
 final class AnyDocCAdapterTests: XCTestCase {
+  private static let emptyManifest =
+    "{\"schemaVersion\":1,\"blocks\":[],\"notes\":[],\"assets\":[]}"
+
   private let limits = AnyDocConverter.Limits(
     maximumInputBytes: 128,
     maximumOutputBytes: 64
@@ -12,19 +15,19 @@ final class AnyDocCAdapterTests: XCTestCase {
   func testLiveAdapterReportsPinnedVersionAndConvertsRealFixtures() throws {
     XCTAssertEqual(
       try AnyDocCAdapter.live.engineVersion(),
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2"
+      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3"
     )
 
     let rtf = try AnyDocCAdapter.live.markdown(
       from: fixtureData("rtf/handmade-blockstyle.rtf"),
-      fileExtension: nil,
+      format: nil,
       limits: .standard
     )
     XCTAssertTrue(rtf.contains("fn main()"))
 
     let csv = try AnyDocCAdapter.live.markdown(
       from: fixtureData("csv/handmade-quoted.csv"),
-      fileExtension: "csv",
+      format: .csv,
       limits: .standard
     )
     XCTAssertTrue(csv.contains("| padded | comma, inside | 3 |"))
@@ -37,7 +40,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       XCTAssertThrowsError(
         try AnyDocCAdapter.live.markdown(
           from: fixtureData(fixture),
-          fileExtension: nil,
+          format: nil,
           limits: .standard
         )
       ) { error in
@@ -46,25 +49,203 @@ final class AnyDocCAdapterTests: XCTestCase {
     }
   }
 
-  func testAdapterPassesBytesHintAndLimitsToNativeBridge() throws {
+  func testAdapterPassesBytesFormatAndLimitsToNativeBridge() throws {
     let bridge = FakeNativeBridge()
     let adapter = bridge.makeAdapter()
     let data = Data([0, 1, 2, 3])
 
-    _ = try adapter.markdown(from: data, fileExtension: "rtf", limits: limits)
+    _ = try adapter.markdown(from: data, format: .rtf, limits: limits)
 
     XCTAssertEqual(
       bridge.invocations,
       [
         FakeNativeBridge.Invocation(
+          operation: .markdown,
           data: data,
-          fileExtension: "rtf",
+          format: "rtf",
           maximumInputBytes: 128,
-          maximumOutputBytes: 64
+          maximumResultBytes: 64
         )
       ]
     )
     XCTAssertEqual(bridge.freeCount, 1)
+  }
+
+  func testDocumentCopiesManifestAndAssetsAndPassesTheDocumentLimit() throws {
+    let manifest = """
+      {"schemaVersion":1,"blocks":[{"kind":"paragraph","value":[{"kind":"image","value":{"alt":"x","source":{"kind":"asset","value":0}}}]}],"notes":[],"assets":[{"id":0,"mediaType":"image/png","originPart":"image.png","byteLength":2}]}
+      """
+    let bridge = FakeNativeBridge(responseProvider: { _ in
+      .document(manifest: manifest, assets: [[1, 2]])
+    })
+    let limits = AnyDocConverter.Limits(
+      maximumInputBytes: 128,
+      maximumOutputBytes: 64,
+      maximumDocumentBytes: 512
+    )
+
+    let document = try bridge.makeAdapter().document(
+      from: Data([9]),
+      format: .docx,
+      limits: limits
+    )
+
+    XCTAssertEqual(document.assets.map(\.bytes), [Data([1, 2])])
+    XCTAssertEqual(
+      bridge.invocations,
+      [
+        .init(
+          operation: .document,
+          data: Data([9]),
+          format: "docx",
+          maximumInputBytes: 128,
+          maximumResultBytes: 512
+        )
+      ]
+    )
+    XCTAssertEqual(bridge.copyCount, 2)
+    XCTAssertEqual(bridge.freeCount, 1)
+  }
+
+  func testDocumentDistinguishesAValidEmptyAssetFromAnAccessorMiss() throws {
+    let manifest =
+      "{\"schemaVersion\":1,\"blocks\":[],\"notes\":[],\"assets\":[{\"id\":0,\"mediaType\":\"application/octet-stream\",\"originPart\":\"empty.bin\",\"byteLength\":0}]}"
+    let bridge = FakeNativeBridge(responseProvider: { _ in
+      .document(manifest: manifest, assets: [[]])
+    })
+
+    let document = try bridge.makeAdapter().document(
+      from: Data([1]),
+      format: .docx,
+      limits: .standard
+    )
+
+    XCTAssertEqual(document.assets.map(\.bytes), [Data()])
+    XCTAssertEqual(bridge.freeCount, 1)
+  }
+
+  func testWrongResultKindsFailClosedAndFreeTheirOwners() {
+    let cases: [(FakeNativeBridge.Response, FakeNativeBridge.Operation)] = [
+      (.document(manifest: Self.emptyManifest, assets: []), .markdown),
+      (.success("wrong kind"), .document),
+    ]
+
+    for (response, operation) in cases {
+      let bridge = FakeNativeBridge(responseProvider: { _ in response })
+      XCTAssertThrowsError(
+        try {
+          switch operation {
+          case .markdown:
+            _ = try bridge.makeAdapter().markdown(from: Data([1]), format: nil, limits: .standard)
+          case .document:
+            _ = try bridge.makeAdapter().document(from: Data([1]), format: nil, limits: .standard)
+          }
+        }()
+      ) { error in
+        guard case .bridgeFailure = error as? AnyDocConversionError else {
+          return XCTFail("Expected bridgeFailure, got \(error)")
+        }
+      }
+      XCTAssertEqual(bridge.freeCount, 1)
+    }
+  }
+
+  func testDocumentLimitIsCheckedBeforeManifestOrAssetCopies() {
+    let shortLimit = AnyDocConverter.Limits(
+      maximumInputBytes: 10,
+      maximumOutputBytes: 10,
+      maximumDocumentBytes: 4
+    )
+    let oversizedManifest = FakeNativeBridge(responseProvider: { _ in
+      .init(
+        status: 2,
+        markdown: nil,
+        documentManifest: [1],
+        errorCode: nil,
+        errorMessage: nil,
+        reportedManifestLength: 5
+      )
+    })
+    XCTAssertThrowsError(
+      try oversizedManifest.makeAdapter().document(from: Data([1]), format: nil, limits: shortLimit)
+    ) { error in
+      XCTAssertEqual(error as? AnyDocConversionError, .documentTooLarge(maximumBytes: 4))
+    }
+    XCTAssertEqual(oversizedManifest.copyCount, 0)
+    XCTAssertEqual(oversizedManifest.freeCount, 1)
+
+    let manifest =
+      "{\"schemaVersion\":1,\"blocks\":[],\"notes\":[],\"assets\":[{\"id\":0,\"mediaType\":\"x\",\"originPart\":\"a\",\"byteLength\":5}]}"
+    let assetLimited = FakeNativeBridge(responseProvider: { _ in
+      .document(manifest: manifest, assets: [[1, 2, 3, 4, 5]])
+    })
+    let manifestOnlyLimit = AnyDocConverter.Limits(
+      maximumInputBytes: 10,
+      maximumOutputBytes: 10,
+      maximumDocumentBytes: UInt64(manifest.utf8.count + 4)
+    )
+    XCTAssertThrowsError(
+      try assetLimited.makeAdapter().document(
+        from: Data([1]), format: nil, limits: manifestOnlyLimit)
+    ) { error in
+      XCTAssertEqual(
+        error as? AnyDocConversionError,
+        .documentTooLarge(maximumBytes: manifestOnlyLimit.maximumDocumentBytes)
+      )
+    }
+    XCTAssertEqual(assetLimited.copyCount, 1)
+    XCTAssertEqual(assetLimited.freeCount, 1)
+  }
+
+  func testDocumentRejectsAccessorMismatchesAndAlwaysFreesTheResult() {
+    let manifest =
+      "{\"schemaVersion\":1,\"blocks\":[],\"notes\":[],\"assets\":[{\"id\":0,\"mediaType\":\"x\",\"originPart\":\"a\",\"byteLength\":1}]}"
+    let responses: [FakeNativeBridge.Response] = [
+      .init(
+        status: 2,
+        markdown: nil,
+        documentManifest: Array(manifest.utf8),
+        documentAssets: [.missing],
+        errorCode: nil,
+        errorMessage: nil
+      ),
+      .init(
+        status: 2,
+        markdown: nil,
+        documentManifest: Array(manifest.utf8),
+        documentAssets: [.present([1], reportedLength: 2)],
+        errorCode: nil,
+        errorMessage: nil
+      ),
+      .init(
+        status: 2,
+        markdown: Array("wrong".utf8),
+        documentManifest: Array(manifest.utf8),
+        documentAssets: [.present([1])],
+        errorCode: nil,
+        errorMessage: nil
+      ),
+      .init(
+        status: 2,
+        markdown: nil,
+        documentManifest: Array(manifest.utf8),
+        documentAssets: [.present([1]), .present([2])],
+        errorCode: nil,
+        errorMessage: nil
+      ),
+    ]
+
+    for response in responses {
+      let bridge = FakeNativeBridge(responseProvider: { _ in response })
+      XCTAssertThrowsError(
+        try bridge.makeAdapter().document(from: Data([1]), format: nil, limits: .standard)
+      ) { error in
+        guard case .bridgeFailure = error as? AnyDocConversionError else {
+          return XCTFail("Expected bridgeFailure, got \(error)")
+        }
+      }
+      XCTAssertEqual(bridge.freeCount, 1)
+    }
   }
 
   func testKnownAndUnknownErrorCodesMapWithoutParsingMessages() throws {
@@ -72,6 +253,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       ("wrapper.invalidInput", .invalidInput("synthetic failure")),
       ("wrapper.inputLimit", .inputTooLarge(actualBytes: 3, maximumBytes: 128)),
       ("wrapper.outputLimit", .outputTooLarge(maximumBytes: 64)),
+      ("wrapper.documentLimit", .documentTooLarge(maximumBytes: 128 * 1024 * 1024)),
       ("unsupported", .unsupported("synthetic failure")),
       ("malformed", .malformed("synthetic failure")),
       ("encrypted", .encrypted("synthetic failure")),
@@ -79,6 +261,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       ("missingPart", .missingPart("synthetic failure")),
       ("io", .io("synthetic failure")),
       ("bridge.panic", .bridgeFailure("synthetic failure")),
+      ("bridge.transport", .bridgeFailure("synthetic failure")),
       (
         "future.upstreamCode",
         .unrecognizedUpstream(code: "future.upstreamCode", message: "synthetic failure")
@@ -90,7 +273,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       let adapter = bridge.makeAdapter()
 
       XCTAssertThrowsError(
-        try adapter.markdown(from: Data([1, 2, 3]), fileExtension: nil, limits: limits)
+        try adapter.markdown(from: Data([1, 2, 3]), format: nil, limits: limits)
       ) { error in
         XCTAssertEqual(error as? AnyDocConversionError, expectedError)
       }
@@ -109,7 +292,7 @@ final class AnyDocCAdapterTests: XCTestCase {
     let adapter = bridge.makeAdapter()
 
     XCTAssertThrowsError(
-      try adapter.markdown(from: Data([1]), fileExtension: nil, limits: limits)
+      try adapter.markdown(from: Data([1]), format: nil, limits: limits)
     ) { error in
       XCTAssertEqual(
         error as? AnyDocConversionError,
@@ -126,7 +309,7 @@ final class AnyDocCAdapterTests: XCTestCase {
     let limits = AnyDocConverter.Limits(maximumInputBytes: 10, maximumOutputBytes: 4)
 
     XCTAssertThrowsError(
-      try adapter.markdown(from: Data([1]), fileExtension: nil, limits: limits)
+      try adapter.markdown(from: Data([1]), format: nil, limits: limits)
     ) { error in
       XCTAssertEqual(
         error as? AnyDocConversionError,
@@ -167,7 +350,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       let adapter = bridge.makeAdapter()
 
       XCTAssertThrowsError(
-        try adapter.markdown(from: Data([1]), fileExtension: nil, limits: limits)
+        try adapter.markdown(from: Data([1]), format: nil, limits: limits)
       ) { error in
         guard case .bridgeFailure = error as? AnyDocConversionError else {
           return XCTFail("Expected bridgeFailure, got \(error)")
@@ -260,7 +443,7 @@ final class AnyDocCAdapterTests: XCTestCase {
       let bridge = FakeNativeBridge(responseProvider: { _ in response })
 
       XCTAssertThrowsError(
-        try bridge.makeAdapter().markdown(from: Data([1]), fileExtension: nil, limits: limits)
+        try bridge.makeAdapter().markdown(from: Data([1]), format: nil, limits: limits)
       ) { error in
         guard case .bridgeFailure = error as? AnyDocConversionError else {
           return XCTFail("Expected bridgeFailure, got \(error)")
@@ -283,7 +466,7 @@ final class AnyDocCAdapterTests: XCTestCase {
     let bridge = FakeNativeBridge(responseProvider: { _ in response })
 
     XCTAssertThrowsError(
-      try bridge.makeAdapter().markdown(from: Data([1]), fileExtension: nil, limits: limits)
+      try bridge.makeAdapter().markdown(from: Data([1]), format: nil, limits: limits)
     ) { error in
       guard case .bridgeFailure = error as? AnyDocConversionError else {
         return XCTFail("Expected bridgeFailure, got \(error)")
@@ -296,7 +479,7 @@ final class AnyDocCAdapterTests: XCTestCase {
   func testMissingHandleAndABIMismatchBecomeBridgeFailuresWithoutFreeing() {
     let missing = FakeNativeBridge(responseProvider: { _ in nil })
     XCTAssertThrowsError(
-      try missing.makeAdapter().markdown(from: Data(), fileExtension: nil, limits: limits)
+      try missing.makeAdapter().markdown(from: Data(), format: nil, limits: limits)
     ) { error in
       guard case .bridgeFailure = error as? AnyDocConversionError else {
         return XCTFail("Expected bridgeFailure, got \(error)")
@@ -306,7 +489,7 @@ final class AnyDocCAdapterTests: XCTestCase {
 
     let mismatch = FakeNativeBridge(abiVersion: 1)
     XCTAssertThrowsError(
-      try mismatch.makeAdapter().markdown(from: Data(), fileExtension: nil, limits: limits)
+      try mismatch.makeAdapter().markdown(from: Data(), format: nil, limits: limits)
     ) { error in
       guard case .bridgeFailure = error as? AnyDocConversionError else {
         return XCTFail("Expected bridgeFailure, got \(error)")

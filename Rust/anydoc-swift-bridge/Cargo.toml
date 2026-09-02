@@ -43,6 +43,8 @@ unimplemented = "deny"
 
 [dependencies]
 anydoc = "=0.2.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 opt-level = 3

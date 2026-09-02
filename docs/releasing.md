@@ -19,15 +19,28 @@ Swift package can point to it. Both workflows accept `MAJOR.MINOR.PATCH`
 without a leading `v`, must run from `master`, and refuse an existing tag or
 release.
 
+## Compatibility record
+
+| Swift package | Embedded AnyDoc | Bridge ABI | Native exports |
+| --- | --- | --- | --- |
+| `0.1.5` | `0.2.4` | 2 | 9 |
+| `0.2.0` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
+
+ABI v3 combines canonical typed format selection and structured documents as
+one release unit. Never publish an artifact that contains only one half of that
+contract.
+
 ## Required release-safe sequence
 
 ### 1. Merge artifact tooling without a Linux release claim
 
-Land the Swift 6.2 manifest, Linux artifact tooling, local-artifact tests, and
-native Linux CI first. At this stage:
+Land the Swift 6.2 manifest, complete ABI-v3 source, Linux artifact tooling,
+local-artifact tests, and native Linux CI first. At this stage:
 
 - macOS ordinary consumers continue to use the checksum-pinned
-  `binary-0.1.5` dynamic XCFramework;
+  `binary-0.1.5` dynamic XCFramework for the published 0.1.5 source, while
+  repository verification of the 0.2.0 source explicitly selects its local
+  ABI-v3 artifact;
 - Linux CI sets `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` and consumes the verified
   local artifact bundle; and
 - Linux manifest evaluation without that explicit local switch fails with a
@@ -48,13 +61,19 @@ The workflow:
 1. validates the request and refuses an existing release or tag;
 2. builds and verifies macOS arm64, Linux x86_64, and Linux aarch64 in parallel;
 3. uses Xcode 26.2 for macOS and the digest-pinned Swift 6.2.4 Amazon Linux 2
-   image with Rust 1.94.1 for Linux;
+   image with Rust 1.94.1 for Linux, and verifies that the public Swift symbol
+   graph contains no bridge declarations;
 4. creates one draft release containing the three archives and their individual
-   SHA-256 checksums;
+   SHA-256 checksums; the release title and notes identify embedded AnyDoc 0.2.4
+   and bridge ABI v3;
 5. redownloads every draft asset on its native architecture, compares its bytes
    and checksum with the build output, and reruns artifact, audit, smoke,
-   package, fixture, and Rust-runtime coexistence verification; and
-6. publishes only after all three native reverification jobs succeed, then
+   package, fixture, and Rust-runtime coexistence verification;
+6. for both the original and redownloaded artifacts, builds the public memory
+   consumer in Release mode, performs one warm-up per deterministic profile,
+   then requires three asset-heavy and three manifest-heavy conversions to stay
+   at or below 512 MiB peak RSS; and
+7. publishes only after all three native reverification jobs succeed, then
    confirms that the release is immutable.
 
 Record the three checksums from the release notes. Do not update

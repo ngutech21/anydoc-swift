@@ -13,7 +13,7 @@ enum CompositionConsumer {
     }
 
     let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
-    let markdown = try await AnyDocConverter().markdown(from: data, fileExtension: "rtf")
+    let markdown = try await AnyDocConverter().markdown(from: data, format: .rtf)
     guard markdown.contains("fn main()") else {
       fatalError("the AnyDoc bridge did not convert the real RTF fixture")
     }

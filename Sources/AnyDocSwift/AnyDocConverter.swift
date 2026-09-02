@@ -1,25 +1,33 @@
 import Dispatch
 import Foundation
 
-/// Converts supported document bytes to GitHub-Flavored Markdown.
+/// Converts supported document bytes to Markdown or a structured document.
 ///
 /// Each converter performs native work in FIFO order on its own serial queue.
 /// Separate converter instances may convert concurrently. Cancellation before
 /// native work starts skips the native call. Once native work starts it cannot
-/// be interrupted; the result is released before `CancellationError` is thrown.
+/// be interrupted; the native result is released before cancellation is
+/// reported.
 public actor AnyDocConverter {
   public struct Limits: Sendable, Equatable {
     public static let standard = Limits(
       maximumInputBytes: 64 * 1024 * 1024,
-      maximumOutputBytes: 16 * 1024 * 1024
+      maximumOutputBytes: 16 * 1024 * 1024,
+      maximumDocumentBytes: 128 * 1024 * 1024
     )
 
     public let maximumInputBytes: UInt64
     public let maximumOutputBytes: UInt64
+    public let maximumDocumentBytes: UInt64
 
-    public init(maximumInputBytes: UInt64, maximumOutputBytes: UInt64) {
+    public init(
+      maximumInputBytes: UInt64,
+      maximumOutputBytes: UInt64,
+      maximumDocumentBytes: UInt64 = 128 * 1024 * 1024
+    ) {
       self.maximumInputBytes = maximumInputBytes
       self.maximumOutputBytes = maximumOutputBytes
+      self.maximumDocumentBytes = maximumDocumentBytes
     }
   }
 
@@ -62,18 +70,37 @@ public actor AnyDocConverter {
 
   /// Converts document bytes to GitHub-Flavored Markdown.
   ///
-  /// - Parameters:
-  ///   - data: Complete document bytes. Callers should check file size before
-  ///     loading large files into `Data`.
-  ///   - fileExtension: An optional extension hint. Content detection remains
-  ///     authoritative; CSV requires the `csv` hint.
-  /// - Returns: UTF-8 Markdown within the configured output limit.
-  /// - Throws: `AnyDocConversionError` for conversion failures, or
-  ///   `CancellationError` when the calling task is cancelled.
-  public func markdown(from data: Data, fileExtension: String? = nil) async throws -> String {
+  /// A supplied format authoritatively selects its parser. Passing `nil`
+  /// delegates format detection to AnyDoc; signature-less CSV must be named.
+  public func markdown(
+    from data: Data,
+    format: AnyDocFormat? = nil
+  ) async throws -> String {
+    try await perform(data: data) { adapter, limits in
+      try adapter.markdown(from: data, format: format, limits: limits)
+    }
+  }
+
+  /// Parses document bytes into a self-contained structured document.
+  ///
+  /// A supplied format authoritatively selects its parser. Passing `nil`
+  /// delegates format detection to AnyDoc. PDF has no document-model form and
+  /// is supported only by ``markdown(from:format:)``.
+  public func document(
+    from data: Data,
+    format: AnyDocFormat? = nil
+  ) async throws -> AnyDocDocument {
+    try await perform(data: data) { adapter, limits in
+      try adapter.document(from: data, format: format, limits: limits)
+    }
+  }
+
+  private func perform<Output: Sendable>(
+    data: Data,
+    operation: @escaping @Sendable (AnyDocCAdapter, Limits) throws -> Output
+  ) async throws -> Output {
     try Task.checkCancellation()
 
-    let normalizedExtension = try Self.normalize(fileExtension)
     let actualInputBytes = UInt64(data.count)
     guard actualInputBytes <= limits.maximumInputBytes else {
       throw AnyDocConversionError.inputTooLarge(
@@ -81,7 +108,6 @@ public actor AnyDocConverter {
         maximumBytes: limits.maximumInputBytes
       )
     }
-
     try Task.checkCancellation()
 
     let cancellation = CancellationState()
@@ -89,28 +115,16 @@ public actor AnyDocConverter {
     let enqueue = self.enqueue
     let limits = self.limits
 
-    let markdown = try await withTaskCancellationHandler {
+    let output = try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation {
-        (continuation: CheckedContinuation<String, any Error>) in
+        (continuation: CheckedContinuation<Output, any Error>) in
         enqueue {
           guard cancellation.begin() else {
             continuation.resume(throwing: CancellationError())
             return
           }
 
-          let result: Result<String, Error>
-          do {
-            result = .success(
-              try adapter.markdown(
-                from: data,
-                fileExtension: normalizedExtension,
-                limits: limits
-              )
-            )
-          } catch {
-            result = .failure(error)
-          }
-
+          let result = Result { try operation(adapter, limits) }
           if cancellation.isCancelled {
             continuation.resume(throwing: CancellationError())
           } else {
@@ -123,27 +137,7 @@ public actor AnyDocConverter {
     }
 
     try Task.checkCancellation()
-    return markdown
-  }
-
-  private static func normalize(_ fileExtension: String?) throws -> String? {
-    guard var normalized = fileExtension?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-      return nil
-    }
-    if normalized.first == "." {
-      normalized.removeFirst()
-    }
-    normalized = normalized.lowercased()
-
-    guard !normalized.isEmpty else {
-      return nil
-    }
-    guard normalized.utf8.count <= 64 else {
-      throw AnyDocConversionError.invalidInput(
-        "File-extension hint exceeds 64 UTF-8 bytes."
-      )
-    }
-    return normalized
+    return output
   }
 }
 
@@ -152,20 +146,16 @@ private final class CancellationState: @unchecked Sendable {
   private var cancelled = false
 
   func cancel() {
-    lock.lock()
-    cancelled = true
-    lock.unlock()
+    lock.withLock {
+      cancelled = true
+    }
   }
 
   func begin() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return !cancelled
+    lock.withLock { !cancelled }
   }
 
   var isCancelled: Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return cancelled
+    lock.withLock { cancelled }
   }
 }

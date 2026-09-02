@@ -4,12 +4,11 @@ import Foundation
 /// The non-public Swift-to-C adapter.
 ///
 /// All unsafe buffer borrowing is concentrated in `Functions.live`,
-/// `copyBuffer`, and `copyOCRMetadata`. Input buffers remain alive for the
-/// synchronous native call. Result buffers are copied while their opaque owner
-/// is live, and that owner is released exactly once by the Rust-provided free
-/// function.
+/// `invoke`, and the immediate copy helpers. Input buffers remain alive for
+/// each synchronous native call. Result buffers are copied while their opaque
+/// owner is live, and that owner is released exactly once on every exit path.
 struct AnyDocCAdapter: @unchecked Sendable {
-  static let expectedABIVersion: UInt32 = 2
+  static let expectedABIVersion: UInt32 = 3
   static let live = AnyDocCAdapter(functions: .live)
 
   struct Functions: @unchecked Sendable {
@@ -26,12 +25,19 @@ struct AnyDocCAdapter: @unchecked Sendable {
         UInt64,
         UInt64
       ) -> OpaquePointer?
-    typealias ResultStatus = @Sendable (OpaquePointer?) -> Int32
+    typealias ResultKind = @Sendable (OpaquePointer?) -> Int32
     typealias ResultAccessor =
       @Sendable (
         OpaquePointer?,
         UnsafeMutablePointer<Int>?
       ) -> UnsafePointer<UInt8>?
+    typealias DocumentAssetAccessor =
+      @Sendable (
+        OpaquePointer?,
+        Int,
+        UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+        UnsafeMutablePointer<Int>?
+      ) -> Int32
     typealias OCRMetadataAccessor =
       @Sendable (
         OpaquePointer?,
@@ -44,9 +50,12 @@ struct AnyDocCAdapter: @unchecked Sendable {
 
     let abiVersion: @Sendable () -> UInt32
     let engineVersion: EngineVersion
-    let convert: Convert
-    let isSuccess: ResultStatus
+    let convertMarkdown: Convert
+    let convertDocument: Convert
+    let resultKind: ResultKind
     let markdown: ResultAccessor
+    let documentManifest: ResultAccessor
+    let documentAsset: DocumentAssetAccessor
     let errorCode: ResultAccessor
     let errorMessage: ResultAccessor
     let needsOCRPages: OCRMetadataAccessor
@@ -58,11 +67,16 @@ struct AnyDocCAdapter: @unchecked Sendable {
     static let live = Functions(
       abiVersion: { anydoc_swift_abi_version() },
       engineVersion: { anydoc_swift_engine_version($0) },
-      convert: {
+      convertMarkdown: {
         anydoc_swift_convert_markdown($0, $1, $2, $3, $4, $5)
       },
-      isSuccess: { anydoc_swift_result_is_success($0) },
+      convertDocument: {
+        anydoc_swift_convert_document($0, $1, $2, $3, $4, $5)
+      },
+      resultKind: { anydoc_swift_result_kind($0) },
       markdown: { anydoc_swift_result_markdown($0, $1) },
+      documentManifest: { anydoc_swift_result_document_manifest($0, $1) },
+      documentAsset: { anydoc_swift_result_document_asset($0, $1, $2, $3) },
       errorCode: { anydoc_swift_result_error_code($0, $1) },
       errorMessage: { anydoc_swift_result_error_message($0, $1) },
       needsOCRPages: { anydoc_swift_result_needs_ocr_pages($0, $1, $2) },
@@ -73,8 +87,12 @@ struct AnyDocCAdapter: @unchecked Sendable {
   }
 
   private struct NativeBuffer {
-    let bytes: Data
-    let isAbsent: Bool
+    let pointer: UnsafePointer<UInt8>?
+    let length: Int
+
+    var isAbsent: Bool {
+      pointer == nil && length == 0
+    }
   }
 
   private struct NativeOCRMetadata {
@@ -93,11 +111,12 @@ struct AnyDocCAdapter: @unchecked Sendable {
 
     var length = 0
     let pointer = functions.engineVersion(&length)
-    let buffer = try copyBuffer(pointer: pointer, length: length, name: "engine version")
-    guard !buffer.isAbsent, !buffer.bytes.isEmpty else {
+    let buffer = try inspectBuffer(pointer: pointer, length: length, name: "engine version")
+    guard !buffer.isAbsent, buffer.length > 0 else {
       throw bridgeFailure("Native bridge returned no engine version.")
     }
-    guard let version = String(data: buffer.bytes, encoding: .utf8) else {
+    let bytes = try copy(buffer)
+    guard let version = String(data: bytes, encoding: .utf8) else {
       throw bridgeFailure("Native bridge returned an engine version that is not valid UTF-8.")
     }
     return version
@@ -105,25 +124,73 @@ struct AnyDocCAdapter: @unchecked Sendable {
 
   func markdown(
     from data: Data,
-    fileExtension: String?,
+    format: AnyDocFormat?,
     limits: AnyDocConverter.Limits
   ) throws -> String {
+    try invoke(
+      data: data,
+      format: format,
+      maximumResultBytes: limits.maximumOutputBytes,
+      limits: limits,
+      convert: functions.convertMarkdown
+    ) { result in
+      switch functions.resultKind(result) {
+      case 1:
+        return try decodeMarkdown(result, maximumOutputBytes: limits.maximumOutputBytes)
+      case 0:
+        throw try decodeFailure(result, dataCount: data.count, limits: limits)
+      default:
+        throw bridgeFailure("Native bridge returned a non-Markdown result kind.")
+      }
+    }
+  }
+
+  func document(
+    from data: Data,
+    format: AnyDocFormat?,
+    limits: AnyDocConverter.Limits
+  ) throws -> AnyDocDocument {
+    try invoke(
+      data: data,
+      format: format,
+      maximumResultBytes: limits.maximumDocumentBytes,
+      limits: limits,
+      convert: functions.convertDocument
+    ) { result in
+      switch functions.resultKind(result) {
+      case 2:
+        return try decodeDocument(result, maximumDocumentBytes: limits.maximumDocumentBytes)
+      case 0:
+        throw try decodeFailure(result, dataCount: data.count, limits: limits)
+      default:
+        throw bridgeFailure("Native bridge returned a non-document result kind.")
+      }
+    }
+  }
+
+  private func invoke<Output>(
+    data: Data,
+    format: AnyDocFormat?,
+    maximumResultBytes: UInt64,
+    limits: AnyDocConverter.Limits,
+    convert: Functions.Convert,
+    decode: (OpaquePointer) throws -> Output
+  ) throws -> Output {
     try validateABI()
 
-    let extensionData = fileExtension.map { Data($0.utf8) } ?? Data()
+    let formatData = format.map { Data($0.rawValue.utf8) } ?? Data()
     let result = data.withUnsafeBytes { inputBuffer in
-      extensionData.withUnsafeBytes { extensionBuffer in
+      formatData.withUnsafeBytes { formatBuffer in
         // SAFETY: Both `Data` values remain alive for this complete,
         // synchronous C call. Rust validates each pointer/length pair before
         // borrowing it and owns every byte reachable from the returned handle.
-        functions.convert(
+        convert(
           inputBuffer.bindMemory(to: UInt8.self).baseAddress,
           inputBuffer.count,
-          fileExtension == nil
-            ? nil : extensionBuffer.bindMemory(to: UInt8.self).baseAddress,
-          extensionBuffer.count,
+          format == nil ? nil : formatBuffer.bindMemory(to: UInt8.self).baseAddress,
+          formatBuffer.count,
           limits.maximumInputBytes,
-          limits.maximumOutputBytes
+          maximumResultBytes
         )
       }
     }
@@ -136,15 +203,7 @@ struct AnyDocCAdapter: @unchecked Sendable {
       // and invokes the Rust free function exactly once on every exit path.
       functions.freeResult(result)
     }
-
-    switch functions.isSuccess(result) {
-    case 1:
-      return try decodeSuccess(result, maximumOutputBytes: limits.maximumOutputBytes)
-    case 0:
-      throw try decodeFailure(result, dataCount: data.count, limits: limits)
-    default:
-      throw bridgeFailure("Native bridge returned an invalid result status.")
-    }
+    return try decode(result)
   }
 
   private func validateABI() throws {
@@ -156,40 +215,131 @@ struct AnyDocCAdapter: @unchecked Sendable {
     }
   }
 
-  private func decodeSuccess(
+  private func decodeMarkdown(
     _ result: OpaquePointer,
     maximumOutputBytes: UInt64
   ) throws -> String {
-    let markdown = try copyBuffer(
-      using: functions.markdown,
+    try requireAbsent(functions.documentManifest, result: result, name: "document manifest")
+    try requireNoDocumentAsset(result)
+    try requireNoError(result)
+
+    let markdown = try inspect(
+      functions.markdown,
       result: result,
       name: "Markdown",
-      maximumBytes: maximumOutputBytes
+      maximumBytes: maximumOutputBytes,
+      limitError: .outputTooLarge(maximumBytes: maximumOutputBytes)
     )
-    let errorCode = try copyBuffer(
-      using: functions.errorCode,
-      result: result,
-      name: "error code"
-    )
-    let errorMessage = try copyBuffer(
-      using: functions.errorMessage,
-      result: result,
-      name: "error message"
-    )
-    let ocrMetadata = try copyOCRMetadata(result: result)
-
-    guard errorCode.isAbsent, errorMessage.isAbsent, ocrMetadata == nil else {
-      throw bridgeFailure("Native success result also contained an error.")
-    }
-
-    let outputBytes = UInt64(markdown.bytes.count)
-    guard outputBytes <= maximumOutputBytes else {
-      throw AnyDocConversionError.outputTooLarge(maximumBytes: maximumOutputBytes)
-    }
-    guard let string = String(data: markdown.bytes, encoding: .utf8) else {
+    let bytes = try copy(markdown)
+    guard let string = String(data: bytes, encoding: .utf8) else {
       throw bridgeFailure("Native bridge returned Markdown that is not valid UTF-8.")
     }
     return string
+  }
+
+  private func decodeDocument(
+    _ result: OpaquePointer,
+    maximumDocumentBytes: UInt64
+  ) throws -> AnyDocDocument {
+    try requireAbsent(functions.markdown, result: result, name: "Markdown")
+    try requireNoError(result)
+
+    let prepared = try prepareManifest(
+      result,
+      maximumDocumentBytes: maximumDocumentBytes
+    )
+    try validateCumulativeLimit(
+      prepared,
+      maximumDocumentBytes: maximumDocumentBytes
+    )
+
+    var assets: [Data] = []
+    assets.reserveCapacity(prepared.assetByteLengths.count)
+    for (index, declaredLength) in prepared.assetByteLengths.enumerated() {
+      assets.append(
+        try copyDocumentAsset(
+          result,
+          index: index,
+          declaredLength: declaredLength
+        )
+      )
+    }
+    try requireNoDocumentAsset(result, index: prepared.assetByteLengths.count)
+    return try prepared.materialize(assetBytes: assets)
+  }
+
+  private func prepareManifest(
+    _ result: OpaquePointer,
+    maximumDocumentBytes: UInt64
+  ) throws -> AnyDocDocumentDecoder.Prepared {
+    let manifest = try inspect(
+      functions.documentManifest,
+      result: result,
+      name: "document manifest",
+      maximumBytes: maximumDocumentBytes,
+      limitError: .documentTooLarge(maximumBytes: maximumDocumentBytes)
+    )
+    guard !manifest.isAbsent, manifest.length > 0 else {
+      throw bridgeFailure("Native bridge returned no document manifest.")
+    }
+    // The copied JSON `Data` dies when this helper returns; only decoded
+    // structural values and declared lengths survive while assets are copied.
+    return try AnyDocDocumentDecoder.prepare(manifest: copy(manifest))
+  }
+
+  private func validateCumulativeLimit(
+    _ prepared: AnyDocDocumentDecoder.Prepared,
+    maximumDocumentBytes: UInt64
+  ) throws {
+    var total = prepared.manifestByteCount
+    for length in prepared.assetByteLengths {
+      let (next, overflow) = total.addingReportingOverflow(length)
+      guard !overflow, next <= maximumDocumentBytes else {
+        throw AnyDocConversionError.documentTooLarge(maximumBytes: maximumDocumentBytes)
+      }
+      guard Int(exactly: length) != nil else {
+        throw bridgeFailure("Native bridge returned an invalid asset length.")
+      }
+      total = next
+    }
+  }
+
+  private func copyDocumentAsset(
+    _ result: OpaquePointer,
+    index: Int,
+    declaredLength: UInt64
+  ) throws -> Data {
+    var pointer: UnsafePointer<UInt8>?
+    var length = 0
+    let status = functions.documentAsset(result, index, &pointer, &length)
+    guard status == 1 else {
+      if status == 0, pointer == nil, length == 0 {
+        throw bridgeFailure("Native bridge returned no declared document asset.")
+      }
+      throw bridgeFailure("Native bridge returned an invalid document-asset status.")
+    }
+    let buffer = try inspectBuffer(pointer: pointer, length: length, name: "document asset")
+    guard UInt64(length) == declaredLength else {
+      throw bridgeFailure("Native bridge returned a document asset with the wrong length.")
+    }
+    return try copy(buffer)
+  }
+
+  private func requireNoDocumentAsset(_ result: OpaquePointer, index: Int = 0) throws {
+    var pointer: UnsafePointer<UInt8>?
+    var length = 0
+    let status = functions.documentAsset(result, index, &pointer, &length)
+    guard status == 0, pointer == nil, length == 0 else {
+      throw bridgeFailure("Native result contained an unexpected document asset.")
+    }
+  }
+
+  private func requireNoError(_ result: OpaquePointer) throws {
+    try requireAbsent(functions.errorCode, result: result, name: "error code")
+    try requireAbsent(functions.errorMessage, result: result, name: "error message")
+    guard try copyOCRMetadata(result: result) == nil else {
+      throw bridgeFailure("Native success result also contained OCR metadata.")
+    }
   }
 
   private func decodeFailure(
@@ -197,36 +347,24 @@ struct AnyDocCAdapter: @unchecked Sendable {
     dataCount: Int,
     limits: AnyDocConverter.Limits
   ) throws -> AnyDocConversionError {
-    let markdown = try copyBuffer(
-      using: functions.markdown,
-      result: result,
-      name: "Markdown"
-    )
-    let errorCode = try copyBuffer(
-      using: functions.errorCode,
-      result: result,
-      name: "error code"
-    )
-    let errorMessage = try copyBuffer(
-      using: functions.errorMessage,
-      result: result,
-      name: "error message"
-    )
+    try requireAbsent(functions.markdown, result: result, name: "Markdown")
+    try requireAbsent(functions.documentManifest, result: result, name: "document manifest")
+    try requireNoDocumentAsset(result)
+
+    let errorCode = try inspect(functions.errorCode, result: result, name: "error code")
+    let errorMessage = try inspect(functions.errorMessage, result: result, name: "error message")
     let ocrMetadata = try copyOCRMetadata(result: result)
 
-    guard markdown.isAbsent else {
-      throw bridgeFailure("Native failure result also contained Markdown.")
-    }
-    guard !errorCode.isAbsent, !errorCode.bytes.isEmpty else {
+    guard !errorCode.isAbsent, errorCode.length > 0 else {
       throw bridgeFailure("Native failure result contained no error code.")
     }
-    guard !errorMessage.isAbsent, !errorMessage.bytes.isEmpty else {
+    guard !errorMessage.isAbsent, errorMessage.length > 0 else {
       throw bridgeFailure("Native failure result contained no error message.")
     }
-    guard let code = String(data: errorCode.bytes, encoding: .utf8) else {
+    guard let code = String(data: try copy(errorCode), encoding: .utf8) else {
       throw bridgeFailure("Native bridge returned an error code that is not valid UTF-8.")
     }
-    guard let message = String(data: errorMessage.bytes, encoding: .utf8) else {
+    guard let message = String(data: try copy(errorMessage), encoding: .utf8) else {
       throw bridgeFailure("Native bridge returned an error message that is not valid UTF-8.")
     }
 
@@ -234,10 +372,7 @@ struct AnyDocCAdapter: @unchecked Sendable {
       guard let ocrMetadata else {
         throw bridgeFailure("Native needsOcr failure contained no OCR page metadata.")
       }
-      return .needsOCR(
-        pages: ocrMetadata.pages,
-        pageCount: ocrMetadata.pageCount
-      )
+      return .needsOCR(pages: ocrMetadata.pages, pageCount: ocrMetadata.pageCount)
     }
     guard ocrMetadata == nil else {
       throw bridgeFailure("Native non-OCR failure also contained OCR page metadata.")
@@ -253,6 +388,8 @@ struct AnyDocCAdapter: @unchecked Sendable {
       )
     case "wrapper.outputLimit":
       return .outputTooLarge(maximumBytes: limits.maximumOutputBytes)
+    case "wrapper.documentLimit":
+      return .documentTooLarge(maximumBytes: limits.maximumDocumentBytes)
     case "unsupported":
       return .unsupported(message)
     case "malformed":
@@ -265,7 +402,7 @@ struct AnyDocCAdapter: @unchecked Sendable {
       return .missingPart(message)
     case "io":
       return .io(message)
-    case "bridge.panic":
+    case "bridge.panic", "bridge.transport":
       return .bridgeFailure(message)
     default:
       return .unrecognizedUpstream(code: code, message: message)
@@ -294,8 +431,8 @@ struct AnyDocCAdapter: @unchecked Sendable {
     }
 
     // SAFETY: The C ABI guarantees that a non-null page array is readable for
-    // its reported length until the result is freed. Length and page-count
-    // bounds are validated before this immediate copy.
+    // its reported length until the result is freed. Bounds are validated
+    // before this immediate copy.
     let rawPages = functions.copyPages(pointer, length)
     let totalPages = Int(pageCount)
     let pages = rawPages.map(Int.init)
@@ -308,28 +445,37 @@ struct AnyDocCAdapter: @unchecked Sendable {
       }
       previousPage = page
     }
-
     return NativeOCRMetadata(pages: pages, pageCount: totalPages)
   }
 
-  private func copyBuffer(
-    using accessor: Functions.ResultAccessor,
+  private func requireAbsent(
+    _ accessor: Functions.ResultAccessor,
+    result: OpaquePointer,
+    name: String
+  ) throws {
+    let buffer = try inspect(accessor, result: result, name: name)
+    guard buffer.isAbsent else {
+      throw bridgeFailure("Native result contained unexpected \(name).")
+    }
+  }
+
+  private func inspect(
+    _ accessor: Functions.ResultAccessor,
     result: OpaquePointer,
     name: String,
-    maximumBytes: UInt64? = nil
+    maximumBytes: UInt64? = nil,
+    limitError: AnyDocConversionError? = nil
   ) throws -> NativeBuffer {
     var length = 0
     let pointer = accessor(result, &length)
-    guard length >= 0 else {
-      throw bridgeFailure("Native bridge returned a negative \(name) length.")
+    let buffer = try inspectBuffer(pointer: pointer, length: length, name: name)
+    if let maximumBytes, UInt64(buffer.length) > maximumBytes {
+      throw limitError ?? bridgeFailure("Native bridge returned an oversized \(name) buffer.")
     }
-    if let maximumBytes, UInt64(length) > maximumBytes {
-      throw AnyDocConversionError.outputTooLarge(maximumBytes: maximumBytes)
-    }
-    return try copyBuffer(pointer: pointer, length: length, name: name)
+    return buffer
   }
 
-  private func copyBuffer(
+  private func inspectBuffer(
     pointer: UnsafePointer<UInt8>?,
     length: Int,
     name: String
@@ -337,17 +483,22 @@ struct AnyDocCAdapter: @unchecked Sendable {
     guard length >= 0 else {
       throw bridgeFailure("Native bridge returned a negative \(name) length.")
     }
-    guard length > 0 else {
-      return NativeBuffer(bytes: Data(), isAbsent: pointer == nil)
-    }
-    guard let pointer else {
+    guard length == 0 || pointer != nil else {
       throw bridgeFailure("Native bridge returned no \(name) buffer for a non-zero length.")
     }
+    return NativeBuffer(pointer: pointer, length: length)
+  }
 
-    // SAFETY: The C ABI guarantees that a non-null result buffer is readable
-    // for its reported length until the owning result is freed. Copying here
-    // prevents any borrowed pointer from escaping that lifetime.
-    return NativeBuffer(bytes: functions.copyBytes(pointer, length), isAbsent: false)
+  private func copy(_ buffer: NativeBuffer) throws -> Data {
+    guard buffer.length > 0 else {
+      return Data()
+    }
+    guard let pointer = buffer.pointer else {
+      throw bridgeFailure("Native bridge returned an unreadable buffer.")
+    }
+    // SAFETY: The C ABI guarantees that the buffer is readable for its
+    // validated length until the owning result is freed. Copy immediately.
+    return functions.copyBytes(pointer, buffer.length)
   }
 
   private func bridgeFailure(_ message: String) -> AnyDocConversionError {

@@ -42,6 +42,8 @@ swift_scratch := root + "/.build/swift"
 xcode_scratch := root + "/.build/xcode-package-smoke"
 xcode_product_framework := xcode_scratch + "/Build/Products/Debug/" + framework_name + ".framework"
 linux_artifact_script := root + "/Scripts/linux-artifact.sh"
+public_interface_script := root + "/Scripts/check-public-interface.sh"
+memory_probe_script := root + "/Scripts/memory-probe.sh"
 linux_build_image := "anydoc-swift-linux:local"
 
 default:
@@ -86,6 +88,10 @@ _generate-licenses output metadata:
 lint-shell:
     bash -n "{{ linux_artifact_script }}"
     shellcheck "{{ linux_artifact_script }}"
+    bash -n "{{ public_interface_script }}"
+    shellcheck "{{ public_interface_script }}"
+    bash -n "{{ memory_probe_script }}"
+    shellcheck "{{ memory_probe_script }}"
 
 # Run every Rust and native-tooling check used by continuous integration.
 ci-rust: lint-rust lint-shell build-rust test-rust check-licenses
@@ -186,6 +192,14 @@ build-swift-macos: artifact-macos
 test-swift-macos: artifact-macos
     env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 xcrun swift test --scratch-path "{{ swift_scratch }}"
 
+# Prove the generated public Swift symbol graph contains no private bridge API.
+check-public-interface-macos: build-swift-macos
+    "{{ public_interface_script }}"
+
+# Run the non-default Release memory budget used to qualify native releases.
+memory-probe-macos: artifact-macos
+    "{{ memory_probe_script }}"
+
 # Process the dynamic XCFramework through Xcode's Swift-package build graph.
 verify-xcode-package: verify-artifact-macos
     rm -rf "{{ xcode_scratch }}"
@@ -231,6 +245,10 @@ build-swift-linux: artifact-linux
 test-swift-linux: artifact-linux
     "{{ linux_artifact_script }}" test-swift
 
+# Run the non-default Release memory budget used to qualify native releases.
+memory-probe-linux: artifact-linux
+    "{{ linux_artifact_script }}" memory-probe
+
 # Prove coexistence with a second unwind-enabled Rust static library.
 verify-linux-coexistence: artifact-linux
     "{{ linux_artifact_script }}" composition
@@ -269,12 +287,16 @@ build-swift:
 test-swift:
     if [[ "$(uname -s)" = "Darwin" ]]; then just test-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just test-swift-linux; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
 
+# Run the native Release memory budget for the current host.
+memory-probe:
+    if [[ "$(uname -s)" = "Darwin" ]]; then just memory-probe-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just memory-probe-linux; else echo "unsupported memory-probe host: $(uname -s)" >&2; exit 1; fi
+
 # Run every Swift check used by continuous integration on the current host.
 ci-swift:
     if [[ "$(uname -s)" = "Darwin" ]]; then just ci-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just ci-swift-linux-container; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
 
 # Run every macOS Swift check used by continuous integration.
-ci-swift-macos: lint-swift build-swift-macos test-swift-macos
+ci-swift-macos: lint-swift build-swift-macos test-swift-macos check-public-interface-macos
 
 # Run all continuous-integration checks locally.
 ci:

@@ -5,6 +5,7 @@ ARG RUSTUP_VERSION=1.28.2
 
 RUN yum -y install \
     file-5.11-36.amzn2.0.1 \
+    python3-3.7.16-1.amzn2.0.28 \
     zip-3.0-11.amzn2.0.3 \
   && yum clean all \
   && rm -rf /var/cache/yum

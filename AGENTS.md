@@ -17,20 +17,19 @@
 
 ## Current state
 
-- The repository has a verified native artifact and the source implementation
-  of the Swift public interface. The crates.io-pinned AnyDoc dependency is
-  proven through real conversion fixtures; the C ABI, Swift adapter, ownership,
-  scheduling, cancellation, and typed-error behavior are implemented and
-  tested against the local platform artifact. On macOS, the verified immutable
-  release asset is integrated as a checksum-pinned SwiftPM binary target, so
-  ordinary root Swift builds require neither Cargo nor a locally built Rust
-  library.
+- The unreleased 0.2.0 source implements Markdown and structured-document
+  conversion as one ABI-v3 unit. The crates.io-pinned AnyDoc dependency is
+  proven through real conversion fixtures; transport, ownership, scheduling,
+  cancellation, typed errors, and defensive validation are tested against the
+  local platform artifact. Do not publish an intermediate ABI-v3 artifact.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` uses Swift tools 6.2, pins the current macOS dynamic-framework
-  release archive, and keeps its bridge dependency private to the Swift
-  implementation target. That published binary has been reverified as AnyDoc
-  0.2.4, ABI version 2, with exactly nine exported C functions.
+- `Package.swift` uses Swift tools 6.2 and keeps its bridge dependency private
+  to the Swift implementation target. The published 0.1.5 macOS archive remains
+  AnyDoc 0.2.4 / ABI v2 with nine exports; it cannot satisfy the new source.
+  Repository verification must use the locally built AnyDoc 0.2.4 / ABI v3
+  artifact with exactly 12 exports until all three immutable `binary-0.2.0`
+  assets are published and checksum-pinned atomically.
 - Native GNU/Linux artifact-bundle tooling is staged for
   `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. Linux manifest
   evaluation intentionally requires the verified local artifact until all three

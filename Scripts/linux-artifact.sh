@@ -183,7 +183,7 @@ verify_symbols() {
   LC_ALL=C sort "$public_symbols" > "$expected"
   grep -v '^anydoc_swift_bridge_internal_' "$defined_symbols" > "$actual"
   cmp "$expected" "$actual"
-  [[ "$(wc -l < "$actual" | tr -d ' ')" == "9" ]]
+  [[ "$(wc -l < "$actual" | tr -d ' ')" == "12" ]]
   grep -Fx 'anydoc_swift_bridge_internal_rust_eh_personality' "$defined_symbols"
 
   LC_ALL=C sort -c "$packaged_symbol_map"
@@ -510,6 +510,16 @@ composition_smoke() {
   )
 }
 
+memory_probe() {
+  if PATH="$consumer_path" command -v cargo >/dev/null 2>&1; then
+    echo "Cargo must be unavailable during consumer verification" >&2
+    exit 1
+  fi
+  env PATH="$consumer_path" ANYDOC_SWIFT_PACKAGE_ROOT="$root" \
+    ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 \
+    "$root/Scripts/memory-probe.sh"
+}
+
 artifact() {
   build_artifact
   verify_archive "$archive"
@@ -524,6 +534,7 @@ ci_swift() {
   lint_swift
   artifact
   build_swift
+  "$root/Scripts/check-public-interface.sh"
   test_swift
   composition_smoke
 }
@@ -542,6 +553,7 @@ commands:
   build-swift           build Swift debug and release with Cargo unavailable
   test-swift            run the complete Swift test suite with Cargo unavailable
   composition           run the two-Rust-static-library consumer smoke test
+  memory-probe          run the non-default Release peak-RSS qualification
   ci-swift              run Swift, artifact, and composition checks
   ci                     run Rust, Swift, artifact, and composition checks
 EOF
@@ -579,6 +591,10 @@ case "$command_name" in
   composition)
     assert_environment
     composition_smoke
+    ;;
+  memory-probe)
+    assert_environment
+    memory_probe
     ;;
   ci-swift)
     assert_environment

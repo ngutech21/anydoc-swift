@@ -6,19 +6,28 @@
 )]
 
 mod engine;
+mod transport;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::{ptr, slice, str};
 
-const ABI_VERSION: u32 = 2;
+const ABI_VERSION: u32 = 3;
 const ENGINE_VERSION: &[u8] =
-    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 2";
+    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3";
 
 const INVALID_INPUT_CODE: &str = "wrapper.invalidInput";
 const INPUT_LIMIT_CODE: &str = "wrapper.inputLimit";
 const OUTPUT_LIMIT_CODE: &str = "wrapper.outputLimit";
+const DOCUMENT_LIMIT_CODE: &str = "wrapper.documentLimit";
+const TRANSPORT_CODE: &str = "bridge.transport";
+const TRANSPORT_MESSAGE: &str = "native document transport failed";
 const PANIC_CODE: &str = "bridge.panic";
 const PANIC_MESSAGE: &str = "native conversion panicked";
+
+const RESULT_KIND_INVALID: i32 = -1;
+const RESULT_KIND_FAILURE: i32 = 0;
+const RESULT_KIND_MARKDOWN: i32 = 1;
+const RESULT_KIND_DOCUMENT: i32 = 2;
 
 /// Opaque owner for one conversion result and all buffers borrowed from it.
 ///
@@ -29,9 +38,10 @@ pub struct AnydocSwiftResult {
 }
 
 enum ResultPayload {
-    Success {
+    Markdown {
         markdown: Box<[u8]>,
     },
+    Document(transport::DocumentPayload),
     Failure {
         code: Box<[u8]>,
         message: Box<[u8]>,
@@ -40,12 +50,14 @@ enum ResultPayload {
 }
 
 impl AnydocSwiftResult {
-    fn success(markdown: String) -> Self {
-        Self {
-            payload: ResultPayload::Success {
+    fn success(success: ConversionSuccess) -> Self {
+        let payload = match success {
+            ConversionSuccess::Markdown(markdown) => ResultPayload::Markdown {
                 markdown: markdown.into_bytes().into_boxed_slice(),
             },
-        }
+            ConversionSuccess::Document(document) => ResultPayload::Document(document),
+        };
+        Self { payload }
     }
 
     fn failure(failure: BridgeFailure) -> Self {
@@ -57,6 +69,11 @@ impl AnydocSwiftResult {
             },
         }
     }
+}
+
+enum ConversionSuccess {
+    Markdown(String),
+    Document(transport::DocumentPayload),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -111,16 +128,14 @@ fn validate_buffer(pointer: *const u8, length: usize, name: &str) -> Result<(), 
     Ok(())
 }
 
-unsafe fn convert_raw(
+unsafe fn decode_raw_input<'a>(
     bytes: *const u8,
     bytes_length: usize,
-    extension_utf8: *const u8,
-    extension_length: usize,
-    maximum_input_bytes: u64,
-    maximum_output_bytes: u64,
-) -> Result<String, BridgeFailure> {
+    format_utf8: *const u8,
+    format_length: usize,
+) -> Result<(&'a [u8], Option<&'a str>), BridgeFailure> {
     validate_buffer(bytes, bytes_length, "bytes")?;
-    validate_buffer(extension_utf8, extension_length, "extension_utf8")?;
+    validate_buffer(format_utf8, format_length, "format_utf8")?;
 
     let bytes = if bytes_length == 0 {
         &[]
@@ -131,33 +146,63 @@ unsafe fn convert_raw(
         // resulting borrow remains local to this call.
         unsafe { slice::from_raw_parts(bytes, bytes_length) }
     };
-    let extension_bytes = if extension_length == 0 {
+    let format_bytes = if format_length == 0 {
         &[]
     } else {
         // SAFETY: `validate_buffer` rejected null and oversized buffers. The
         // exported interface requires the caller to provide readable storage
         // for the complete length while this synchronous call is active. The
         // resulting borrow remains local to this call.
-        unsafe { slice::from_raw_parts(extension_utf8, extension_length) }
+        unsafe { slice::from_raw_parts(format_utf8, format_length) }
     };
-    let extension = if extension_bytes.is_empty() {
+    let format = if format_bytes.is_empty() {
         None
     } else {
-        Some(str::from_utf8(extension_bytes).map_err(|_| {
-            BridgeFailure::new(INVALID_INPUT_CODE, "extension_utf8 is not valid UTF-8")
+        Some(str::from_utf8(format_bytes).map_err(|_| {
+            BridgeFailure::new(INVALID_INPUT_CODE, "format_utf8 is not valid UTF-8")
         })?)
     };
 
-    engine::convert_markdown(bytes, extension, maximum_input_bytes, maximum_output_bytes)
+    Ok((bytes, format))
+}
+
+unsafe fn convert_markdown_raw(
+    bytes: *const u8,
+    bytes_length: usize,
+    format_utf8: *const u8,
+    format_length: usize,
+    maximum_input_bytes: u64,
+    maximum_output_bytes: u64,
+) -> Result<ConversionSuccess, BridgeFailure> {
+    // SAFETY: The raw export forwards its complete pointer obligations.
+    let (bytes, format) =
+        unsafe { decode_raw_input(bytes, bytes_length, format_utf8, format_length) }?;
+    engine::convert_markdown(bytes, format, maximum_input_bytes, maximum_output_bytes)
+        .map(ConversionSuccess::Markdown)
+}
+
+unsafe fn convert_document_raw(
+    bytes: *const u8,
+    bytes_length: usize,
+    format_utf8: *const u8,
+    format_length: usize,
+    maximum_input_bytes: u64,
+    maximum_document_bytes: u64,
+) -> Result<ConversionSuccess, BridgeFailure> {
+    // SAFETY: The raw export forwards its complete pointer obligations.
+    let (bytes, format) =
+        unsafe { decode_raw_input(bytes, bytes_length, format_utf8, format_length) }?;
+    engine::convert_document(bytes, format, maximum_input_bytes, maximum_document_bytes)
+        .map(ConversionSuccess::Document)
 }
 
 fn run_conversion<F>(operation: F) -> *mut AnydocSwiftResult
 where
-    F: FnOnce() -> Result<String, BridgeFailure>,
+    F: FnOnce() -> Result<ConversionSuccess, BridgeFailure>,
 {
     match catch_unwind(AssertUnwindSafe(|| {
         let result = match operation() {
-            Ok(markdown) => AnydocSwiftResult::success(markdown),
+            Ok(success) => AnydocSwiftResult::success(success),
             Err(failure) => AnydocSwiftResult::failure(failure),
         };
         Box::into_raw(Box::new(result))
@@ -202,28 +247,35 @@ unsafe fn result_buffer(
 
 fn markdown_buffer(payload: &ResultPayload) -> Option<&[u8]> {
     match payload {
-        ResultPayload::Success { markdown } => Some(markdown),
-        ResultPayload::Failure { .. } => None,
+        ResultPayload::Markdown { markdown } => Some(markdown),
+        ResultPayload::Document(_) | ResultPayload::Failure { .. } => None,
+    }
+}
+
+fn document_manifest_buffer(payload: &ResultPayload) -> Option<&[u8]> {
+    match payload {
+        ResultPayload::Document(document) => Some(&document.manifest),
+        ResultPayload::Markdown { .. } | ResultPayload::Failure { .. } => None,
     }
 }
 
 fn error_code_buffer(payload: &ResultPayload) -> Option<&[u8]> {
     match payload {
-        ResultPayload::Success { .. } => None,
+        ResultPayload::Markdown { .. } | ResultPayload::Document(_) => None,
         ResultPayload::Failure { code, .. } => Some(code),
     }
 }
 
 fn error_message_buffer(payload: &ResultPayload) -> Option<&[u8]> {
     match payload {
-        ResultPayload::Success { .. } => None,
+        ResultPayload::Markdown { .. } | ResultPayload::Document(_) => None,
         ResultPayload::Failure { message, .. } => Some(message),
     }
 }
 
 fn needs_ocr_metadata(payload: &ResultPayload) -> Option<&NeedsOcrMetadata> {
     match payload {
-        ResultPayload::Success { .. } => None,
+        ResultPayload::Markdown { .. } | ResultPayload::Document(_) => None,
         ResultPayload::Failure { needs_ocr, .. } => needs_ocr.as_ref(),
     }
 }
@@ -264,8 +316,8 @@ pub unsafe extern "C" fn anydoc_swift_engine_version(out_length: *mut usize) -> 
 pub unsafe extern "C" fn anydoc_swift_convert_markdown(
     bytes: *const u8,
     bytes_length: usize,
-    extension_utf8: *const u8,
-    extension_length: usize,
+    format_utf8: *const u8,
+    format_length: usize,
     maximum_input_bytes: u64,
     maximum_output_bytes: u64,
 ) -> *mut AnydocSwiftResult {
@@ -273,11 +325,11 @@ pub unsafe extern "C" fn anydoc_swift_convert_markdown(
         // SAFETY: This export forwards its documented caller obligations to
         // the concentrated raw-buffer implementation.
         unsafe {
-            convert_raw(
+            convert_markdown_raw(
                 bytes,
                 bytes_length,
-                extension_utf8,
-                extension_length,
+                format_utf8,
+                format_length,
                 maximum_input_bytes,
                 maximum_output_bytes,
             )
@@ -285,23 +337,58 @@ pub unsafe extern "C" fn anydoc_swift_convert_markdown(
     })
 }
 
-/// Reports whether a result contains Markdown.
+/// Converts document bytes to the structured model transport.
 ///
 /// # Safety
 ///
-/// `result` must be null or a live handle returned by
+/// The pointer and ownership rules are identical to
 /// [`anydoc_swift_convert_markdown`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn anydoc_swift_result_is_success(result: *const AnydocSwiftResult) -> i32 {
+pub unsafe extern "C" fn anydoc_swift_convert_document(
+    bytes: *const u8,
+    bytes_length: usize,
+    format_utf8: *const u8,
+    format_length: usize,
+    maximum_input_bytes: u64,
+    maximum_document_bytes: u64,
+) -> *mut AnydocSwiftResult {
+    run_conversion(|| {
+        // SAFETY: This export forwards its documented caller obligations to
+        // the concentrated raw-buffer implementation.
+        unsafe {
+            convert_document_raw(
+                bytes,
+                bytes_length,
+                format_utf8,
+                format_length,
+                maximum_input_bytes,
+                maximum_document_bytes,
+            )
+        }
+    })
+}
+
+/// Reports the payload kind: failure (0), Markdown (1), or document (2).
+///
+/// A null handle reports -1.
+///
+/// # Safety
+///
+/// `result` must be null or a live handle returned by a bridge conversion.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn anydoc_swift_result_kind(result: *const AnydocSwiftResult) -> i32 {
     // SAFETY: Required by this function's interface. `as_ref` handles null.
     match unsafe { result.as_ref() } {
         Some(AnydocSwiftResult {
-            payload: ResultPayload::Success { .. },
-        }) => 1,
-        Some(AnydocSwiftResult {
             payload: ResultPayload::Failure { .. },
-        })
-        | None => 0,
+        }) => RESULT_KIND_FAILURE,
+        Some(AnydocSwiftResult {
+            payload: ResultPayload::Markdown { .. },
+        }) => RESULT_KIND_MARKDOWN,
+        Some(AnydocSwiftResult {
+            payload: ResultPayload::Document(_),
+        }) => RESULT_KIND_DOCUMENT,
+        None => RESULT_KIND_INVALID,
     }
 }
 
@@ -319,6 +406,74 @@ pub unsafe extern "C" fn anydoc_swift_result_markdown(
 ) -> *const u8 {
     // SAFETY: The caller obligations are identical to `result_buffer`'s.
     unsafe { result_buffer(result, out_length, markdown_buffer) }
+}
+
+/// Borrows the JSON manifest from a structured-document result.
+///
+/// # Safety
+///
+/// `result` must be null or a live result handle. `out_length` must be null or
+/// point to writable `size_t` storage. Returned bytes remain valid only until
+/// the result handle is freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn anydoc_swift_result_document_manifest(
+    result: *const AnydocSwiftResult,
+    out_length: *mut usize,
+) -> *const u8 {
+    // SAFETY: The caller obligations are identical to `result_buffer`'s.
+    unsafe { result_buffer(result, out_length, document_manifest_buffer) }
+}
+
+/// Borrows one asset from a structured-document result by its manifest index.
+///
+/// Returns 1 for a valid asset, including an empty one; otherwise returns 0.
+/// Both outputs are reset before validation and borrowed bytes remain valid
+/// only until the owning result is freed.
+///
+/// # Safety
+///
+/// `result` must be null or a live result handle. Both output pointers must be
+/// null or point to writable storage; both are required for a successful read.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn anydoc_swift_result_document_asset(
+    result: *const AnydocSwiftResult,
+    index: usize,
+    out_bytes: *mut *const u8,
+    out_length: *mut usize,
+) -> i32 {
+    if !out_bytes.is_null() {
+        // SAFETY: The caller promises that a non-null output pointer is writable.
+        unsafe { out_bytes.write(ptr::null()) };
+    }
+    if !out_length.is_null() {
+        // SAFETY: The caller promises that a non-null output pointer is writable.
+        unsafe { out_length.write(0) };
+    }
+    if out_bytes.is_null() || out_length.is_null() {
+        return 0;
+    }
+
+    // SAFETY: The exported accessor requires a non-null result pointer to be a
+    // live handle returned by this module. `as_ref` handles null explicitly.
+    let Some(AnydocSwiftResult {
+        payload: ResultPayload::Document(document),
+    }) = (unsafe { result.as_ref() })
+    else {
+        return 0;
+    };
+    let Some(asset) = document.assets.get(index) else {
+        return 0;
+    };
+
+    // SAFETY: Both output pointers were checked and the caller promises they
+    // point to writable storage.
+    unsafe { out_length.write(asset.len()) };
+    if !asset.is_empty() {
+        // SAFETY: `out_bytes` was checked and the asset remains owned by the
+        // live result for the complete borrowed lifetime.
+        unsafe { out_bytes.write(asset.as_ptr()) };
+    }
+    1
 }
 
 /// Borrows the stable error-code bytes from a failed result.
@@ -403,7 +558,7 @@ pub unsafe extern "C" fn anydoc_swift_result_needs_ocr_pages(
 /// # Safety
 ///
 /// `result` must be null or a live handle returned by
-/// [`anydoc_swift_convert_markdown`] that has not previously been freed. After
+/// a bridge conversion that has not previously been freed. After
 /// this call, the handle and every buffer borrowed from it are invalid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn anydoc_swift_result_free(result: *mut AnydocSwiftResult) {
@@ -436,6 +591,10 @@ mod tests {
     const TEXT_PDF_FIXTURE: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../Tests/Fixtures/pdf/text.pdf"
+    ));
+    const MANY_REFERENCES_FIXTURE: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/Fixtures/docx/handmade-manyrefs.docx"
     ));
     const RTF_MARKDOWN: &str = concat!(
         "Body before.\n\n",
@@ -506,7 +665,7 @@ i Endnote body text.
     impl OwnedResult {
         fn convert(
             bytes: Option<&[u8]>,
-            extension: Option<&[u8]>,
+            format: Option<&[u8]>,
             maximum_input_bytes: u64,
             maximum_output_bytes: u64,
         ) -> Self {
@@ -514,8 +673,8 @@ i Endnote body text.
                 Some(bytes) => (bytes.as_ptr(), bytes.len()),
                 None => (ptr::null(), 0),
             };
-            let (extension_pointer, extension_length) = match extension {
-                Some(extension) => (extension.as_ptr(), extension.len()),
+            let (format_pointer, format_length) = match format {
+                Some(format) => (format.as_ptr(), format.len()),
                 None => (ptr::null(), 0),
             };
 
@@ -525,8 +684,8 @@ i Endnote body text.
                 anydoc_swift_convert_markdown(
                     bytes_pointer,
                     bytes_length,
-                    extension_pointer,
-                    extension_length,
+                    format_pointer,
+                    format_length,
                     maximum_input_bytes,
                     maximum_output_bytes,
                 )
@@ -539,14 +698,50 @@ i Endnote body text.
         where
             F: FnOnce() -> Result<String, BridgeFailure>,
         {
-            let result = run_conversion(operation);
+            let result = run_conversion(|| operation().map(ConversionSuccess::Markdown));
+            assert!(!result.is_null());
+            Self(result)
+        }
+
+        fn from_document_payload(payload: transport::DocumentPayload) -> Self {
+            let result = run_conversion(|| Ok(ConversionSuccess::Document(payload)));
+            assert!(!result.is_null());
+            Self(result)
+        }
+
+        fn document(
+            bytes: &[u8],
+            format: Option<&[u8]>,
+            maximum_input_bytes: u64,
+            maximum_document_bytes: u64,
+        ) -> Self {
+            let (format_pointer, format_length) = match format {
+                Some(format) => (format.as_ptr(), format.len()),
+                None => (ptr::null(), 0),
+            };
+            // SAFETY: The borrowed slices remain alive for this synchronous
+            // call, and every non-zero length has a readable pointer.
+            let result = unsafe {
+                anydoc_swift_convert_document(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    format_pointer,
+                    format_length,
+                    maximum_input_bytes,
+                    maximum_document_bytes,
+                )
+            };
             assert!(!result.is_null());
             Self(result)
         }
 
         fn is_success(&self) -> bool {
+            self.kind() > RESULT_KIND_FAILURE
+        }
+
+        fn kind(&self) -> i32 {
             // SAFETY: `OwnedResult` keeps a live bridge-owned handle.
-            unsafe { anydoc_swift_result_is_success(self.0) == 1 }
+            unsafe { anydoc_swift_result_kind(self.0) }
         }
 
         fn bytes(&self, accessor: Accessor) -> Option<Vec<u8>> {
@@ -571,6 +766,34 @@ i Endnote body text.
 
         fn markdown(&self) -> Option<String> {
             self.text(anydoc_swift_result_markdown)
+        }
+
+        fn manifest(&self) -> Option<String> {
+            self.text(anydoc_swift_result_document_manifest)
+        }
+
+        fn asset(&self, index: usize) -> Option<Vec<u8>> {
+            let mut pointer = ptr::NonNull::<u8>::dangling().as_ptr().cast_const();
+            let mut length = usize::MAX;
+            // SAFETY: `OwnedResult` keeps a live result and both outputs are
+            // writable for the complete accessor call.
+            let success = unsafe {
+                anydoc_swift_result_document_asset(self.0, index, &raw mut pointer, &raw mut length)
+            };
+            if success == 0 {
+                assert!(pointer.is_null());
+                assert_eq!(length, 0);
+                return None;
+            }
+            assert_eq!(success, 1);
+            if length == 0 {
+                assert!(pointer.is_null());
+                return Some(Vec::new());
+            }
+            assert!(!pointer.is_null());
+            // SAFETY: A successful accessor returns `length` readable bytes
+            // owned by this live result. Copy them immediately.
+            Some(unsafe { slice::from_raw_parts(pointer, length) }.to_vec())
         }
 
         fn error_code(&self) -> Option<String> {
@@ -630,8 +853,96 @@ i Endnote body text.
     }
 
     #[test]
+    fn document_conversion_has_a_distinct_kind_and_manifest() {
+        let result = OwnedResult::document(RTF_FIXTURE, None, u64::MAX, u64::MAX);
+        assert_eq!(result.kind(), 2);
+        assert!(
+            result
+                .manifest()
+                .is_some_and(|manifest| manifest.starts_with("{\"schemaVersion\":1,"))
+        );
+        assert_eq!(result.markdown(), None);
+    }
+
+    #[test]
+    fn document_conversion_respects_format_pdf_and_wire_limits() {
+        let automatic = OwnedResult::document(RTF_FIXTURE, None, u64::MAX, u64::MAX);
+        let explicit_csv = OwnedResult::document(RTF_FIXTURE, Some(b"csv"), u64::MAX, u64::MAX);
+        assert_eq!(automatic.kind(), RESULT_KIND_DOCUMENT);
+        assert_eq!(explicit_csv.kind(), RESULT_KIND_DOCUMENT);
+        assert_ne!(automatic.manifest(), explicit_csv.manifest());
+
+        let csv_without_format = OwnedResult::document(CSV_FIXTURE, None, u64::MAX, u64::MAX);
+        assert_failure(&csv_without_format, "unsupported");
+        let csv_with_format = OwnedResult::document(CSV_FIXTURE, Some(b"csv"), u64::MAX, u64::MAX);
+        assert_eq!(csv_with_format.kind(), RESULT_KIND_DOCUMENT);
+
+        let pdf = OwnedResult::document(TEXT_PDF_FIXTURE, None, u64::MAX, u64::MAX);
+        assert_failure(&pdf, "unsupported");
+
+        let manifest_length = u64::try_from(
+            automatic
+                .manifest()
+                .expect("automatic document has a manifest")
+                .len(),
+        )
+        .expect("manifest length fits UInt64");
+        let exact = OwnedResult::document(RTF_FIXTURE, None, u64::MAX, manifest_length);
+        assert_eq!(exact.kind(), RESULT_KIND_DOCUMENT);
+        let over = OwnedResult::document(
+            RTF_FIXTURE,
+            None,
+            u64::MAX,
+            manifest_length.saturating_sub(1),
+        );
+        assert_failure(&over, DOCUMENT_LIMIT_CODE);
+    }
+
+    #[test]
+    fn result_kind_and_accessors_distinguish_empty_payloads_from_mismatches() {
+        let markdown = OwnedResult::from_operation(|| Ok(String::new()));
+        assert_eq!(markdown.kind(), RESULT_KIND_MARKDOWN);
+        assert_eq!(markdown.markdown(), None);
+        assert_eq!(markdown.manifest(), None);
+        assert_eq!(markdown.asset(0), None);
+
+        let document = OwnedResult::from_document_payload(transport::DocumentPayload {
+            manifest: br#"{"schemaVersion":1,"blocks":[],"notes":[],"assets":[]}"#
+                .to_vec()
+                .into_boxed_slice(),
+            assets: vec![Vec::new().into_boxed_slice(), vec![7].into_boxed_slice()],
+        });
+        assert_eq!(document.kind(), RESULT_KIND_DOCUMENT);
+        assert_eq!(document.markdown(), None);
+        assert!(document.manifest().is_some());
+        assert_eq!(document.asset(0), Some(vec![]));
+        assert_eq!(document.asset(1), Some(vec![7]));
+        assert_eq!(document.asset(2), None);
+
+        let failure = OwnedResult::convert(None, None, u64::MAX, u64::MAX);
+        assert_eq!(failure.kind(), RESULT_KIND_FAILURE);
+        assert_eq!(failure.manifest(), None);
+        assert_eq!(failure.asset(0), None);
+    }
+
+    #[test]
+    fn repeated_references_reuse_one_stable_asset() {
+        let result =
+            OwnedResult::document(MANY_REFERENCES_FIXTURE, Some(b"docx"), u64::MAX, u64::MAX);
+        let manifest = result.manifest().expect("document has a manifest");
+        assert_eq!(
+            manifest.matches("\"kind\":\"asset\",\"value\":0").count(),
+            70
+        );
+        let first = result.asset(0).expect("shared asset is present");
+        assert_eq!(first.len(), 65_544);
+        assert_eq!(result.asset(0), Some(first));
+        assert_eq!(result.asset(1), None);
+    }
+
+    #[test]
     fn reports_embedded_abi_and_engine_versions() {
-        assert_eq!(anydoc_swift_abi_version(), 2);
+        assert_eq!(anydoc_swift_abi_version(), 3);
 
         let mut length = 0;
         // SAFETY: `length` is writable for the accessor call.
@@ -656,8 +967,8 @@ i Endnote body text.
         let null_bytes = OwnedResult(null_bytes);
         assert_failure(&null_bytes, INVALID_INPUT_CODE);
 
-        // SAFETY: Same deliberate invariant violation for the extension.
-        let null_extension = unsafe {
+        // SAFETY: Same deliberate invariant violation for the canonical format.
+        let null_format = unsafe {
             anydoc_swift_convert_markdown(
                 RTF_FIXTURE.as_ptr(),
                 RTF_FIXTURE.len(),
@@ -667,8 +978,8 @@ i Endnote body text.
                 u64::MAX,
             )
         };
-        let null_extension = OwnedResult(null_extension);
-        assert_failure(&null_extension, INVALID_INPUT_CODE);
+        let null_format = OwnedResult(null_format);
+        assert_failure(&null_format, INVALID_INPUT_CODE);
 
         let oversized_length = (isize::MAX as usize).saturating_add(1);
         // SAFETY: The oversized length must be rejected before the non-null
@@ -694,9 +1005,13 @@ i Endnote body text.
     }
 
     #[test]
-    fn rejects_invalid_utf8_extension() {
+    fn rejects_invalid_utf8_and_noncanonical_formats() {
         let result = OwnedResult::convert(Some(RTF_FIXTURE), Some(&[0xff]), u64::MAX, u64::MAX);
         assert_failure(&result, INVALID_INPUT_CODE);
+        for format in [b"RTF".as_slice(), b"docm".as_slice(), b"unknown".as_slice()] {
+            let result = OwnedResult::convert(Some(RTF_FIXTURE), Some(format), u64::MAX, u64::MAX);
+            assert_failure(&result, INVALID_INPUT_CODE);
+        }
     }
 
     #[test]
@@ -727,19 +1042,18 @@ i Endnote body text.
     }
 
     #[test]
-    fn content_detection_precedes_the_extension_hint() {
+    fn explicit_format_authoritatively_selects_its_parser() {
         let result = OwnedResult::convert(Some(RTF_FIXTURE), Some(b"csv"), u64::MAX, u64::MAX);
-        assert_eq!(result.markdown().as_deref(), Some(RTF_MARKDOWN));
+        assert_ne!(result.markdown().as_deref(), Some(RTF_MARKDOWN));
     }
 
     #[test]
-    fn csv_uses_extension_fallback() {
-        let without_extension = OwnedResult::convert(Some(CSV_FIXTURE), None, u64::MAX, u64::MAX);
-        assert_failure(&without_extension, "unsupported");
+    fn csv_requires_an_explicit_format() {
+        let without_format = OwnedResult::convert(Some(CSV_FIXTURE), None, u64::MAX, u64::MAX);
+        assert_failure(&without_format, "unsupported");
 
-        let with_extension =
-            OwnedResult::convert(Some(CSV_FIXTURE), Some(b"csv"), u64::MAX, u64::MAX);
-        assert_eq!(with_extension.markdown().as_deref(), Some(CSV_MARKDOWN));
+        let with_format = OwnedResult::convert(Some(CSV_FIXTURE), Some(b"csv"), u64::MAX, u64::MAX);
+        assert_eq!(with_format.markdown().as_deref(), Some(CSV_MARKDOWN));
     }
 
     #[test]
@@ -842,10 +1156,12 @@ i Endnote body text.
     #[test]
     fn null_accessors_and_free_are_safe() {
         // SAFETY: Null result handles are explicitly supported.
-        assert_eq!(unsafe { anydoc_swift_result_is_success(ptr::null()) }, 0);
+        let null_kind = unsafe { anydoc_swift_result_kind(ptr::null()) };
+        assert_eq!(null_kind, RESULT_KIND_INVALID);
 
         for accessor in [
             anydoc_swift_result_markdown as Accessor,
+            anydoc_swift_result_document_manifest as Accessor,
             anydoc_swift_result_error_code as Accessor,
             anydoc_swift_result_error_message as Accessor,
         ] {
@@ -868,9 +1184,25 @@ i Endnote body text.
         assert_eq!(length, 0);
         assert_eq!(page_count, 0);
 
+        let mut asset_pointer = ptr::NonNull::<u8>::dangling().as_ptr().cast_const();
+        let mut asset_length = usize::MAX;
+        // SAFETY: Null result handles are supported and both outputs are writable.
+        let asset_status = unsafe {
+            anydoc_swift_result_document_asset(
+                ptr::null(),
+                0,
+                &raw mut asset_pointer,
+                &raw mut asset_length,
+            )
+        };
+        assert_eq!(asset_status, 0);
+        assert!(asset_pointer.is_null());
+        assert_eq!(asset_length, 0);
+
         let result = OwnedResult::convert(Some(RTF_FIXTURE), None, u64::MAX, u64::MAX);
         for accessor in [
             anydoc_swift_result_markdown as Accessor,
+            anydoc_swift_result_document_manifest as Accessor,
             anydoc_swift_result_error_code as Accessor,
             anydoc_swift_result_error_message as Accessor,
         ] {
@@ -895,6 +1227,15 @@ i Endnote body text.
         };
         assert!(pages.is_null());
         assert_eq!(page_count, 0);
+
+        let mut asset_length = usize::MAX;
+        // SAFETY: A null byte-pointer output is supported and the non-null
+        // length must still be reset.
+        let asset_status = unsafe {
+            anydoc_swift_result_document_asset(result.0, 0, ptr::null_mut(), &raw mut asset_length)
+        };
+        assert_eq!(asset_status, 0);
+        assert_eq!(asset_length, 0);
 
         // SAFETY: Freeing a null handle is explicitly a no-op.
         unsafe { anydoc_swift_result_free(ptr::null_mut()) };
