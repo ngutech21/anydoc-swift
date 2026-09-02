@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 /// Converts supported document bytes to GitHub-Flavored Markdown.

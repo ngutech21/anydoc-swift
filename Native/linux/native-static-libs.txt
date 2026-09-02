@@ -1,0 +1,11 @@
+-lc
+-lm
+-lrt
+-lpthread
+-lgcc_s
+-lutil
+-lrt
+-lpthread
+-lm
+-ldl
+-lc

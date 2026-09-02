@@ -21,24 +21,26 @@
   of the Swift public interface. The crates.io-pinned AnyDoc dependency is
   proven through real conversion fixtures; the C ABI, Swift adapter, ownership,
   scheduling, cancellation, and typed-error behavior are implemented and
-  tested against the local XCFramework. The verified immutable release asset is
-  integrated as a checksum-pinned SwiftPM binary target, so ordinary root Swift
-  builds require neither Cargo nor a locally built Rust library.
+  tested against the local platform artifact. On macOS, the verified immutable
+  release asset is integrated as a checksum-pinned SwiftPM binary target, so
+  ordinary root Swift builds require neither Cargo nor a locally built Rust
+  library.
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
-- `Package.swift` pins the `binary-0.1.4` dynamic-framework release archive and
-  keeps its bridge dependency private to the Swift implementation target. A
-  native change must publish and verify a new immutable archive before updating
-  its URL and checksum together.
-- The source-built bridge pins AnyDoc 0.2.4 and uses ABI version 2 to map its
-  `needsOcr` pages and page count to the public structured `needsOCR` error. The
-  published `binary-0.1.4` still contains AnyDoc 0.2.3 and ABI version 1; do not
-  describe ordinary package consumers as upgraded until a new immutable native
-  archive is published and pinned.
+- `Package.swift` uses Swift tools 6.2, pins the current macOS dynamic-framework
+  release archive, and keeps its bridge dependency private to the Swift
+  implementation target. That published binary has been reverified as AnyDoc
+  0.2.4, ABI version 2, with exactly nine exported C functions.
+- Native GNU/Linux artifact-bundle tooling is staged for
+  `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. Linux manifest
+  evaluation intentionally requires the verified local artifact until all three
+  immutable native assets exist and their URLs and checksums can be pinned
+  atomically. Do not describe ordinary Linux package consumers as supported
+  before that follow-up change.
 - Native artifacts built from this revision embed the project license and the
-  generated third-party notices before signing. The immutable `binary-0.1.4`
-  archive contains those resources and is not rewritten; publish a new native
-  archive for any future resource change.
+  generated third-party notices before signing or archiving. The immutable
+  published archive contains those resources and is not rewritten; publish a
+  new native archive for any future resource change.
 - Empty layout directories use `.gitkeep`. Remove those placeholders when real
   files land, and update this section as implementation milestones change.
 
@@ -72,11 +74,11 @@
 ## Reproducibility and artifacts
 
 - Treat the upstream revision, Rust toolchain, `Cargo.lock`, license policy,
-  generated notices, snapshots, XCFramework, and checksum as one intentional
-  upgrade unit. Do not change one incidentally.
+  generated notices, snapshots, platform artifacts, and checksums as one
+  intentional upgrade unit. Do not change one incidentally.
 - Clean Rust builds resolve the locked dependency graph from crates.io. Tests
   themselves must not access network resources at runtime.
-- Derive native libraries and Apple framework linker settings from the release
+- Derive native libraries and platform linker settings from the release
   artifact. Do not guess or rely on the developer machine's ambient state.
 - Consuming builds must never invoke Cargo or link against an unpackaged local
   Rust build.
@@ -93,7 +95,7 @@
   artifacts merely to make that list appear green.
 - Run `just update-licenses` after an intentional native dependency change and
   `just check-licenses` to prove the committed notices still match the locked
-  Apple Silicon release graph.
+  native release graph.
 - Replace the bootstrap import test with behavioral tests as the public
   interface is implemented.
 - Never report an unrun check as passing. Record the exact command, result, and

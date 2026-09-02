@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import XCTest
 
@@ -173,7 +174,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
       return try await converter.markdown(from: Data([1]))
     }
 
-    await fulfillment(of: [startGate.waiting])
+    await fulfillment(of: [startGate.waiting], timeout: 5)
     task.cancel()
     startGate.release()
 
@@ -197,7 +198,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
       try await converter.markdown(from: Data([1]))
     }
 
-    await fulfillment(of: [scheduler.enqueued])
+    await fulfillment(of: [scheduler.enqueued], timeout: 5)
     task.cancel()
     scheduler.runNext()
 
@@ -225,7 +226,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
       try await converter.markdown(from: Data([1]))
     }
 
-    await fulfillment(of: [gate.entered])
+    await fulfillment(of: [gate.entered], timeout: 5)
     task.cancel()
     XCTAssertEqual(bridge.freeCount, 0)
     gate.release()
@@ -259,7 +260,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
     let first = Task {
       try await converter.markdown(from: Data([1]), fileExtension: "first")
     }
-    await fulfillment(of: [firstGate.entered])
+    await fulfillment(of: [firstGate.entered], timeout: 5)
     let second = Task {
       try await converter.markdown(from: Data([2]), fileExtension: "second")
     }
@@ -301,7 +302,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
       try await secondConverter.markdown(from: Data([2]), fileExtension: "two")
     }
 
-    await fulfillment(of: [gate.entered])
+    await fulfillment(of: [gate.entered], timeout: 5)
     gate.release(count: 2)
     _ = try await [first.value, second.value]
 
@@ -322,7 +323,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
       try await converter.markdown(from: Data([1]))
     }
 
-    await fulfillment(of: [gate.entered])
+    await fulfillment(of: [gate.entered], timeout: 5)
     let mainActorRemainedResponsive = await MainActor.run { true }
     XCTAssertTrue(mainActorRemainedResponsive)
     gate.release()
