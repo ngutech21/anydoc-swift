@@ -22,17 +22,17 @@ AnyDocConverter (public Swift actor, one mixed FIFO queue)
   v
 AnyDocCAdapter (private ownership and validation boundary)
   |
-  | length-delimited buffers through bridge ABI v3
+  | length-delimited buffers through the C ABI
   v
 AnyDocSwiftBridge (private platform-native artifact)
   |
-  | canonical parser selection or AnyDoc detection
+  | canonical parser selection or anydoc detection
   v
-AnyDoc 0.2.4 / revision 42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c
+anydoc (pinned upstream engine)
   |
   +--> Markdown bytes
   |
-  +--> schema-v1 manifest + separately retained asset buffers
+  +--> versioned JSON manifest + separately retained asset buffers
   |
   +--> stable error code + optional structured OCR metadata
 ```
@@ -48,13 +48,14 @@ local artifact. Conversion itself is local and makes no network requests.
 | --- | --- |
 | [`Package.swift`](../Package.swift) | Declares the public Swift library, private bridge dependency, and host selection. |
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Owns the public actor, format/error/document types, private decoder, and private C adapter. |
-| [`Native/include/`](../Native/include/) | Defines the portable ABI-v3 C header. |
+| [`Native/include/`](../Native/include/) | Defines the portable C ABI. |
 | [`Native/framework/`](../Native/framework/) | Defines the macOS framework metadata and exact export list. |
 | [`Native/linux/`](../Native/linux/) | Defines Linux artifact metadata, native linker requirements, and exact export list. |
-| [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Calls AnyDoc, serializes transport schema v1, and owns native results. |
+| [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Calls anydoc, serializes the versioned document transport, and owns native results. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, transport validation, concurrency, cancellation, ABI shape, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded upstream fixtures for real conversions. |
 | [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains Cargo-free C and Swift consumers of packaged artifacts. |
+| [`Tests/LinuxRustComposition/`](../Tests/LinuxRustComposition/) | Verifies that a Swift consumer can link the bridge beside another Rust static library. |
 | [`Tests/MemoryProbe/`](../Tests/MemoryProbe/) | Generates deterministic asset/manifest-heavy documents for the release-only RSS gate. |
 | [`Scripts/check-public-interface.sh`](../Scripts/check-public-interface.sh) | Proves the generated public symbol graph contains no bridge declarations. |
 | [`Scripts/memory-probe.sh`](../Scripts/memory-probe.sh) | Runs the non-default Release memory qualification. |
@@ -76,20 +77,20 @@ let document = try await converter.document(from: data, format: .docx)
 
 [`AnyDocFormat`](../Sources/AnyDocSwift/AnyDocFormat.swift) is a closed set of
 canonical parser identities. A supplied value authoritatively selects its
-parser. Passing `nil` delegates detection to AnyDoc.
+parser. Passing `nil` delegates detection to anydoc.
 
 `AnyDocFormat(fileExtension:)` owns filename-extension alias lookup in Swift.
-It mirrors `Format::from_extension` from AnyDoc 0.2.4's `src/lib.rs` at revision
-`42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c`; recheck this mapping and its public
-tests when upgrading the engine. Bare extensions use ASCII case-insensitive
-matching, without trimming whitespace, stripping dots, or extracting filename
-suffixes. Unknown and non-ASCII input returns `nil`; `potx` and `potm` are not
-recognized by the pinned lookup. `.xlsx` represents the whole upstream Excel
+It mirrors `Format::from_extension` from the pinned anydoc dependency; recheck
+this mapping and its public tests when upgrading the engine. Bare extensions
+use ASCII case-insensitive matching, without trimming whitespace, stripping
+dots, or extracting filename suffixes. Unknown and non-ASCII input returns
+`nil`; `potx` and `potm` are not recognized by the pinned lookup. `.xlsx`
+represents the whole upstream Excel
 parser family, including `xls`, `xlsm`, and `xlsb`.
 
 This pure lookup performs no file access, content detection, or native calls.
 Passing its result to either converter method makes a recognized extension
-authoritative; an unrecognized extension delegates detection to AnyDoc. Callers
+authoritative; an unrecognized extension delegates detection to anydoc. Callers
 that need to reject unknown extensions can unwrap first. Existing canonical raw
 values and `init(rawValue:)` remain unchanged. The example uses this public
 initializer instead of maintaining its own alias table.
@@ -113,12 +114,17 @@ One private generic operation implements that scheduling path for both public
 methods, preventing the two result modes from developing different ordering or
 cancellation behavior.
 
+`AnyDocConverter.engineVersion` exposes the embedded engine and bridge identity.
+It validates the ABI and copies the native UTF-8 string. An incompatible bridge
+or malformed version buffer produces a fixed fallback string rather than
+throwing from this property.
+
 ## Private Swift-to-C adapter
 
 [`AnyDocCAdapter`](../Sources/AnyDocSwift/AnyDocCAdapter.swift) concentrates all
 unsafe buffer borrowing and native-result ownership. It:
 
-- requires bridge ABI v3;
+- requires the native ABI to match the adapter's expected ABI version;
 - keeps input and canonical-format UTF-8 buffers alive for the synchronous C
   call;
 - dispatches on the explicit result-kind discriminator;
@@ -137,10 +143,9 @@ by the accessor's explicit success status.
 The bridge import is `internal`, and the release gate extracts the public Swift
 symbol graph and rejects `AnyDocSwiftBridge` or `anydoc_swift_*` leakage.
 
-## C ABI v3
+## C ABI
 
-[`anydoc_swift_bridge.h`](../Native/include/anydoc_swift_bridge.h) exports
-exactly 12 functions:
+[`anydoc_swift_bridge.h`](../Native/include/anydoc_swift_bridge.h) declares:
 
 - ABI and embedded-engine version accessors;
 - Markdown and document conversion entry points;
@@ -151,8 +156,11 @@ exactly 12 functions:
 
 Wrong-payload and out-of-range accessors return no value and reset their
 outputs. The indexed asset accessor separately reports success, so a valid
-zero-byte asset is not confused with absence. Every returned buffer is borrowed
-from the opaque result and remains valid only until the common free function.
+zero-byte asset is not confused with absence. Result payload buffers are
+borrowed from the opaque result and remain valid only until the common free
+function. The engine-version accessor instead returns static storage that
+must never be freed. Callers remain responsible for supplying valid readable
+input buffers, writable output pointers, and live result handles.
 
 The full native conversion is enclosed by Rust's `catch_unwind`; a panic becomes
 the fixed `bridge.panic` failure instead of unwinding through C. Release builds
@@ -161,39 +169,42 @@ therefore retain Rust unwinding.
 ## Rust integration and document transport
 
 [`engine.rs`](../Rust/anydoc-swift-bridge/src/engine.rs) is safe Rust. It owns
-input/output limit enforcement, canonical format mapping, calls to
+input and Markdown-output limit enforcement, canonical format mapping, calls to
 `to_markdown_bytes` and `to_document`, and structured upstream error mapping.
-An explicit format is passed directly to AnyDoc and is authoritative; absence
-invokes AnyDoc's detection.
+An explicit format is passed directly to anydoc and is authoritative; absence
+invokes anydoc's detection.
 
-[`transport.rs`](../Rust/anydoc-swift-bridge/src/transport.rs) owns manifest
-schema version 1. It destructures the upstream document, moves each asset byte
-buffer into the result without cloning it, serializes temporary structural DTOs
-with direct `serde`/`serde_json` dependencies, drops those temporary values, and
-retains the manifest and assets separately in the opaque result.
+[`transport.rs`](../Rust/anydoc-swift-bridge/src/transport.rs) owns the versioned
+manifest schema and native document-result limit. It destructures the upstream
+document, moves each asset byte buffer into the result without cloning it,
+serializes temporary structural DTOs with direct `serde`/`serde_json`
+dependencies, drops those temporary values, and retains the manifest and assets
+separately in the opaque result.
 
-The pinned AnyDoc 0.2.4 grid builder uses empty `Cell::default()` origins with
+The pinned anydoc grid builder uses empty `Cell::default()` origins with
 zero spans for gaps before later-column row spans and for stray covered markers.
 The transport represents those single empty positions as 1-by-1 origins.
 Cells containing blocks or having only one zero span retain their source
 values for Swift's defensive validation.
 
-Schema v1 has top-level `schemaVersion`, `blocks`, `notes`, and `assets` fields.
+The manifest has top-level `schemaVersion`, `blocks`, `notes`, and `assets` fields.
 Associated-value enums use an adjacent `kind` plus optional `value` envelope
 with upstream camel-case tags. Asset metadata contains `id`, `mediaType`,
 `originPart`, and `byteLength`; asset bytes never enter JSON. Integer conversion
 or serialization failures return the fixed, non-content-bearing
 `bridge.transport` error.
 
-Before the public graph is constructed, Swift validates:
+[`AnyDocDocumentDecoder`](../Sources/AnyDocSwift/AnyDocDocumentDecoder.swift)
+decodes private wire types and validates them before returning the public graph:
 
 - schema version and every enum tag;
-- checked `UInt64`-to-`Int` conversions and positive heading levels;
+- checked `UInt64`-to-`Int` conversions and positive heading levels within
+  the upstream `UInt8` range;
 - contiguous asset IDs equal to their indexes, exact byte lengths, and every
   image asset reference;
 - `headerRows` against the grid height; and
-- positive spans, complete rectangles, every covered-slot backlink, and every
-  origin's complete set of covered slots.
+- positive spans within the upstream `UInt32` range, complete rectangles,
+  every covered-slot backlink, and every origin's complete set of covered slots.
 
 Malformed transport is a bridge invariant failure, not an upstream document
 error.
@@ -201,7 +212,7 @@ error.
 ## Runtime paths
 
 Both operations check cancellation and input size, enqueue one typed closure,
-invoke AnyDoc synchronously, copy/validate the selected result, release the
+invoke anydoc synchronously, copy/validate the selected result, release the
 native owner, then check cancellation again.
 
 Markdown conversion enforces `maximumOutputBytes` and validates UTF-8. Document
@@ -211,7 +222,8 @@ validation across an unsafe binary boundary.
 
 Native parsing cannot be interrupted. Cancellation can prevent queued work from
 starting; once parsing is active, conversion and cleanup finish before
-`CancellationError` is delivered.
+`CancellationError` is delivered. Cancellation observed after native work takes
+precedence over both a successful result and a conversion error.
 
 ## Application-visible limits and errors
 
@@ -221,44 +233,42 @@ Standard limits are:
 - 16 MiB UTF-8 Markdown; and
 - 128 MiB document manifest plus assets.
 
+These are input and result-size limits, not a peak-memory budget. Rust checks
+Markdown size after conversion and document size after manifest serialization.
+Swift checks Markdown and manifest bounds before copying either buffer, then
+checks cumulative document size before copying assets. The release memory
+probe separately measures peak RSS.
+
 `AnyDocConversionError.documentTooLarge(maximumBytes:)` represents either
-side's structured-result limit. Failures while AnyDoc retains/extracts an asset
+side's structured-result limit. Failures while anydoc retains/extracts an asset
 remain `.resourceLimit`. Invalid manifest bytes, unknown schema/tags, invalid
 numbers, and inconsistent native payloads become `.bridgeFailure`.
 
-PDF is available only through Markdown conversion because pinned AnyDoc 0.2.4
-has no PDF document-model parser. OCR-required PDFs preserve sorted unique
+PDF is available only through Markdown conversion because the pinned anydoc
+engine has no PDF document-model parser. OCR-required PDFs preserve sorted unique
 one-based page numbers and total page count; no partial Markdown is returned.
 
 ## Binary distribution and release boundary
 
-The source implementation is the unreleased 0.2.0/ABI-v3 unit. Its manifest
-pins all three artifacts from the published immutable `binary-0.2.0` release,
-selecting the URL and checksum for the native host. Repository verification
-continues to select a newly built local artifact with
-`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`. The published 0.1.5 Swift package still pins
-the macOS ABI-v2 XCFramework; the 0.2.0 Swift package release remains pending
-remote-consumer verification on all three platforms.
+[`Package.swift`](../Package.swift) selects a checksum-pinned native artifact
+for macOS arm64 or GNU/Linux x86_64 and aarch64. Unsupported hosts are rejected
+when evaluating the manifest. Ordinary consumers download these packaged
+artifacts without Cargo. Repository verification continues to select a newly
+built local artifact with `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`.
 
 macOS arm64 uses a dynamic XCFramework to isolate its Rust runtime. GNU/Linux
-x86_64 and aarch64 use target-specific SE-0482 static-library artifact bundles.
+x86_64 and aarch64 use target-specific static-library artifact bundles.
 Linux packaging merges the raw archive, prefixes every externally visible
-defined non-ABI symbol, and leaves only the 12 ABI-v3 functions unprefixed.
+defined non-ABI symbol, and leaves only the declared C exports unprefixed.
 Cargo-reported native library requirements are committed and verified rather
 than inferred from the developer machine.
 
-The binary release workflow builds all three artifacts natively, opens one
-draft, redownloads each asset byte-for-byte on its native architecture, and
-repeats verification before publication. Its title and notes record the
-embedded AnyDoc version and ABI. The release-only memory gate builds a public
-consumer in Release mode, warms each deterministic profile once, then requires
-three asset-heavy and three manifest-heavy runs to remain at or below 512 MiB
-peak RSS.
-
-Only after the immutable binary release passes are all three artifact URLs and
-checksums pinned atomically and ordinary Cargo-free consumers tested. The Swift
-package release is a separate authorized operation. See
-[the release guide](releasing.md).
+Native artifacts are built and verified before a Swift package release pins
+them. Qualification includes Cargo-free consumers, Rust-runtime coexistence,
+public-interface checks, and a separate peak-memory probe. Publishing the
+native artifacts and the Swift package are distinct authorized operations;
+existing archives are never rewritten. Exact pins live in the manifests and
+lockfile, and the publishing sequence lives in [the release guide](releasing.md).
 
 ## Ownership boundaries and invariants
 
@@ -267,7 +277,7 @@ package release is a separate authorized operation. See
 - Unsafe borrowing, native-result validation, and exactly-once freeing belong
   to the private Swift adapter and handwritten C ABI.
 - Byte detection, parser selection from an optional canonical format, and
-  parsing belong to AnyDoc through the Rust engine seam.
+  parsing belong to anydoc through the Rust engine seam.
 - Versioned structural serialization belongs only to the Rust transport DTOs;
   validation and construction of the public graph belong only to Swift.
 - Binary selection and bridge visibility belong to `Package.swift`.

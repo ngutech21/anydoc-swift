@@ -87,7 +87,7 @@ Tests are organized around the seams they protect:
 - Public format tests cover all pinned extension aliases, ASCII case matching,
   rejected inputs, unchanged raw values, and real conversions using lookup
   results in both output modes. Keep this table aligned with the pinned
-  upstream `Format::from_extension` when upgrading AnyDoc.
+  upstream `Format::from_extension` when upgrading anydoc.
 - Artifact smoke tests prove that packaged C and Swift consumers can link and
   run without Cargo on `PATH`; artifact and Xcode-package verification also
   prove that the project license and third-party notices survive packaging.
@@ -108,7 +108,7 @@ Tests are organized around the seams they protect:
   Release mode, warms deterministic asset-heavy and manifest-heavy DOCX inputs,
   then checks three runs of each against a 512 MiB peak-RSS ceiling.
 - Real RTF, CSV, PDF, structure-rich DOCX, and EPUB table fixtures exercise the
-  pinned AnyDoc engine. Their provenance and hashes are recorded in
+  pinned anydoc engine. Their provenance and hashes are recorded in
   [`Tests/Fixtures/README.md`](Tests/Fixtures/README.md).
 
 Tests themselves do not access the network. A clean Cargo build may need
@@ -154,7 +154,7 @@ triple that does not match the host.
 
 For the current native architecture, the path:
 
-1. builds the locked AnyDoc 0.2.4 bridge with Rust 1.94.1 and
+1. builds the locked anydoc 0.2.4 bridge with Rust 1.94.1 and
    `panic = "unwind"`;
 2. captures Cargo's ordered `native-static-libs` report and rejects any drift
    from [`Native/linux/native-static-libs.txt`](Native/linux/native-static-libs.txt);
@@ -195,13 +195,13 @@ intentional upgrade unit.
   tests.
 - Error-presentation changes belong in `AnyDocConversionError.swift`; native
   code mapping remains in `AnyDocCAdapter.swift`.
-- Pointer, result-ownership, detection, or AnyDoc integration changes require
+- Pointer, result-ownership, detection, or anydoc integration changes require
   focused Rust and Swift-adapter tests.
 - An ABI change must update the C header, Rust exports, Swift adapter, ABI
   version, symbol-graph and memory gates, smoke tests, and native binary release
   together. ABI v3 belongs to one 0.2.0 artifact set; do not publish an
   intermediate subset.
-- An AnyDoc upgrade must update the exact Cargo dependency, lockfile, embedded
+- An anydoc upgrade must update the exact Cargo dependency, lockfile, embedded
   version and revision, fixture expectations, generated third-party notices,
   and released platform artifacts intentionally.
 - Linker settings must come from Cargo's report for the built artifact rather

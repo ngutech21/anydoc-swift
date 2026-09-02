@@ -1,11 +1,12 @@
 # Releasing AnyDocSwift
 
 Publishing, tagging, and uploading are maintainer-only actions and require
-separate authorization. Never rewrite a published asset or tag.
+separate authorization. Editing this guide or preparing a release does not
+authorize publication.
 
 ## Release model
 
-AnyDocSwift 0.2 and later use two immutable releases:
+Each release uses two immutable tags:
 
 - `binary-X.Y.Z` publishes three native archives:
   `AnyDocSwiftBridge.xcframework.zip`,
@@ -14,104 +15,96 @@ AnyDocSwift 0.2 and later use two immutable releases:
 - `X.Y.Z` publishes the Swift package manifest that selects and checksum-pins
   the appropriate archive for the native host.
 
-The native release must be published and independently verified before the
-Swift package can point to it. Both workflows accept `MAJOR.MINOR.PATCH`
-without a leading `v`, must run from `master`, and refuse an existing tag or
-release.
+Both workflows accept `MAJOR.MINOR.PATCH` without a leading `v`, run from
+`master`, and refuse an existing tag or release. The current Swift release
+workflow requires all three manifest URLs to reference `binary-X.Y.Z` for the
+same requested Swift package version. It does not support publishing a new
+Swift version against an older native release.
 
-## Compatibility record
+## Prerequisites
 
-| Swift package | Embedded AnyDoc | Bridge ABI | Native exports |
-| --- | --- | --- | --- |
-| `0.1.5` | `0.2.4` | 2 | 9 |
-| `0.2.0` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
+- Follow the [development setup](../CONTRIBUTING.md#development-requirements).
+  Toolchain and container pins are defined in
+  [rust-toolchain.toml](../rust-toolchain.toml),
+  [Native/linux/Dockerfile](../Native/linux/Dockerfile), and the release workflows.
+- Enable immutable releases for the repository. The binary workflow verifies
+  this before creating its release tag.
+- Configure the `binary-release` GitHub environment and make
+  `RELEASE_SETTINGS_TOKEN` available to its draft job with repository
+  `Administration: read` permission.
+- Keep the workflow job permissions intact: draft creation, publication, and
+  draft-asset downloads use `contents: write`. The binary workflow otherwise
+  defaults to `contents: read`.
+- Build and verify on native macOS arm64, GNU/Linux x86_64, and GNU/Linux
+  aarch64 hosts. Native cross-compilation is unsupported.
 
-ABI v3 combines canonical typed format selection and structured documents as
-one release unit. Never publish an artifact that contains only one half of that
-contract.
+## Release checklist
 
-## Required release-safe sequence
+### 1. Prepare the candidate
 
-### 1. Merge artifact tooling without a Linux release claim
+Choose an unused `X.Y.Z` and merge the intended implementation and tooling
+changes into `master`. Keep the existing manifest artifact pins until the new
+native release has passed verification.
 
-Land the Swift 6.2 manifest, complete ABI-v3 source, Linux artifact tooling,
-local-artifact tests, and native Linux CI first. At this stage:
+For dependency or ABI changes, follow
+[Dependency and ABI changes](../CONTRIBUTING.md#dependency-and-abi-changes).
+Keep the bridge's embedded engine identity and ABI consistent with
+`EMBEDDED_ANYDOC_VERSION` and `BRIDGE_ABI_VERSION` in both release workflows.
+Update the complete Swift/C/Rust contract and its tests together; do not release
+an intermediate artifact that implements only part of the contract.
 
-- macOS ordinary consumers continue to use the checksum-pinned
-  `binary-0.1.5` dynamic XCFramework for the published 0.1.5 source, while
-  repository verification of the 0.2.0 source explicitly selects its local
-  ABI-v3 artifact;
-- Linux CI sets `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` and consumes the verified
-  local artifact bundle; and
-- Linux manifest evaluation without that explicit local switch fails with a
-  message explaining that the binary release is not yet pinned.
+Update affected API and behavior documentation with the implementation. Keep
+unpublished functionality identified as pending; release numbers belong in the
+README and compatibility record, not the architecture guide or `AGENTS.md`.
 
-Do not add placeholder URLs or checksums and do not describe Linux as released
-support during this phase.
+Run `just final-check` from the repository root and resolve failures before
+starting publication.
 
-### 2. Publish and independently verify `binary-X.Y.Z`
+### 2. Publish and verify the native artifacts
 
-With explicit maintainer authorization, run the
-[Release Binary](../.github/workflows/release-binary.yml) workflow. For each
-Linux job, the runner architecture must match the artifact triple; native
-cross-compilation is not supported.
+With explicit maintainer authorization, run
+[Release Binary](../.github/workflows/release-binary.yml) from `master` with
+the chosen version.
 
-The workflow:
+The workflow builds and checks all three native artifacts before creating a
+tag and draft release. It then downloads each draft asset on its native
+architecture, checks its bytes and SHA-256 checksum against the original build,
+and repeats artifact verification. Linux also repeats Swift builds, tests, and
+Rust-runtime coexistence checks against the downloaded artifact.
 
-1. validates the request and refuses an existing release or tag;
-2. builds and verifies macOS arm64, Linux x86_64, and Linux aarch64 in parallel;
-3. uses Xcode 26.2 for macOS and the digest-pinned Swift 6.2.4 Amazon Linux 2
-   image with Rust 1.94.1 for Linux, and verifies that the public Swift symbol
-   graph contains no bridge declarations;
-4. creates one draft release containing the three archives and their individual
-   SHA-256 checksums; the release title and notes identify embedded AnyDoc 0.2.4
-   and bridge ABI v3;
-5. redownloads every draft asset on its native architecture, compares its bytes
-   and checksum with the build output, and reruns artifact, audit, smoke,
-   package, fixture, and Rust-runtime coexistence verification;
-6. for both the original and redownloaded artifacts, builds the public memory
-   consumer in Release mode, performs one warm-up per deterministic profile,
-   then requires three asset-heavy and three manifest-heavy conversions to stay
-   at or below 512 MiB peak RSS; and
-7. publishes only after all three native reverification jobs succeed, then
-   confirms that the release is immutable.
+Both original and downloaded artifacts undergo the Release memory qualification
+defined in [Scripts/memory-probe.sh](../Scripts/memory-probe.sh). The workflow
+publishes only after all native verification jobs succeed, then verifies that
+the release is public and immutable.
 
-The draft asset verification jobs need `contents: write` on `GITHUB_TOKEN`
-because GitHub restricts unpublished draft releases to callers with push
-access. They use this permission to list and download draft assets; the
-workflow default remains `contents: read`.
+Wait for the complete workflow to succeed. Record the native source commit,
+release URL, three archive URLs and checksums, and verification results.
+Draft creation, uploads, and downloads use the release ID returned by the API;
+do not rediscover a draft by assuming it appears in the public release list.
 
-Draft creation captures the release ID directly from the API response. Asset
-uploads and subsequent verification use that ID without rediscovering the draft
-through the releases list.
+### 3. Pin the published artifacts
 
-Record the three checksums from the release notes. Do not update
-`Package.swift` before this workflow succeeds.
+In one change, update [Package.swift](../Package.swift) with all three URLs
+from `binary-X.Y.Z` and their verified checksums:
 
-### 3. Atomically pin all released artifacts
+- the macOS XCFramework for macOS arm64;
+- the x86_64 artifact bundle for GNU/Linux x86_64; and
+- the aarch64 artifact bundle for GNU/Linux aarch64.
 
-In one change, update `Package.swift` so manifest evaluation selects:
+Preserve `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` for repository verification and the
+manifest's explicit rejection of unsupported hosts. Merge the pin update into
+`master`. Do not change the native implementation after publishing its
+artifacts; further native changes require a new native release.
 
-- the macOS XCFramework URL and checksum on macOS arm64;
-- the x86_64 artifact-bundle URL and checksum on GNU/Linux x86_64; and
-- the aarch64 artifact-bundle URL and checksum on GNU/Linux aarch64.
+### 4. Verify the Swift package candidate
 
-Remove the temporary Linux local-only failure while preserving
-`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` for repository verification. Keep unsupported
-hosts explicit. Update the example package to the new Swift package version
-only after that version is ready to tag.
+Run `just final-check` again with the updated manifest. Then verify the
+candidate checkout on macOS arm64 and both native Linux architectures using
+the environments configured in
+[Release Swift Package](../.github/workflows/release-swift.yml).
 
-### 4. Verify ordinary remote consumers without Cargo
-
-Run the complete local gate:
-
-```sh
-just final-check
-```
-
-Then test ordinary consumers on macOS arm64 and both native Linux
-architectures. Do not set `ANYDOC_SWIFT_USE_LOCAL_BRIDGE`, inject headers, or
-leave Cargo/Rust on `PATH`:
+For these consumer checks, unset `ANYDOC_SWIFT_USE_LOCAL_BRIDGE`, keep Cargo
+and Rust off `PATH`, and do not inject headers or local library paths:
 
 ```sh
 swift package reset
@@ -120,24 +113,52 @@ swift build -c release
 swift test
 ```
 
-These checks must download the published artifact selected by `Package.swift`.
-Record each platform, architecture, URL, checksum, and verifier result.
+On macOS, the workflow invokes Swift through `xcrun`; Linux uses its pinned
+Swift container. These checks must download the published native artifacts
+selected by the candidate manifest. They run before the Swift tag exists.
 
-### 5. Update documentation and publish `X.Y.Z`
+Record the candidate commit, platform, architecture, archive URL, checksum,
+exact commands, and results. Keep the candidate's native contract and test
+expectations consistent with the published artifacts.
 
-Only after remote-consumer verification succeeds, update the README,
-architecture guide, contributor instructions, example, and current-state
-documentation to describe released Linux support.
+### 5. Publish the Swift package and finish documentation
 
-Run the [Release Swift Package](../.github/workflows/release-swift.yml) workflow.
-It rechecks the full macOS gate and ordinary Cargo-free consumers on macOS,
-Linux x86_64, and Linux aarch64 before publishing the Swift tag and immutable
-GitHub release.
+With explicit maintainer authorization, run
+[Release Swift Package](../.github/workflows/release-swift.yml) from `master`
+with the same `X.Y.Z`.
 
-## Immutability
+The workflow validates the manifest pins and embedded metadata, rechecks the
+complete macOS validation gate, and builds and tests the published binary
+dependency without Cargo on all three platforms. It creates the Swift tag and
+release only after those jobs succeed, then verifies the tag's commit and that
+the release is public, stable, and immutable.
+
+After the workflow succeeds:
+
+- Update the README's installation version and any release-specific guidance.
+- Update the example dependency and regenerate its resolved dependency file
+  now that the Swift tag exists; verify that the example resolves and runs.
+- Add the released package's engine, ABI, and export information to the
+  compatibility record below.
+- Remove any pending-release wording for the functionality just published.
+- Retain links to both workflow runs and their verification evidence.
+
+## Compatibility record
+
+| Swift package | Embedded anydoc | Bridge ABI | Native exports |
+| --- | --- | --- | --- |
+| `0.1.5` | `0.2.4` | 2 | 9 |
+| `0.2.0` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
+
+## Immutability and interrupted releases
 
 Treat the upstream revision, Rust toolchain, `Cargo.lock`, license policy,
 generated notices, platform metadata, native archives, and checksums as one
 release unit. Any native code, dependency, bundled resource, symbol map, linker
 requirement, or metadata change requires a new `binary-X.Y.Z` release and new
-checksums. Never alter an existing native archive in place.
+checksums.
+
+If a run fails after creating a tag or draft, inspect the existing release and
+completed jobs before retrying: a fresh dispatch refuses existing tags and
+releases. Never rewrite a published asset or tag, or replace a published
+archive in place.

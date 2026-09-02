@@ -1,107 +1,49 @@
 # AnyDocSwift Contributor Instructions
 
-## Authority
+These instructions apply to the whole repository.
 
-- These instructions apply to the whole repository.
-- [`docs/architecture.md`](docs/architecture.md) explains the current
-  architecture, runtime behavior, repository layout, and invariants.
-  [`CONTRIBUTING.md`](CONTRIBUTING.md) explains local setup, verification,
-  and artifact generation. [`docs/releasing.md`](docs/releasing.md) contains the
-  maintainer-only release flow. Read the relevant sections before changing code
-  and verify exact contracts against the implementation and tests; do not
-  duplicate those guides here.
-- If the overview, pinned upstream source, implementation, or tests conflict,
-  stop and surface the conflict. Do not guess, silently weaken a requirement,
-  or use the latest upstream branch as authority.
-- Keep changes narrow and preserve unrelated worktree changes.
+## Source documents
 
-## Current state
+Read the relevant sections before making changes and follow their requirements:
 
-- The unreleased 0.2.0 source implements Markdown and structured-document
-  conversion as one ABI-v3 unit. The crates.io-pinned AnyDoc dependency is
-  proven through real conversion fixtures; transport, ownership, scheduling,
-  cancellation, typed errors, and defensive validation are tested against the
-  local platform artifact. Do not publish an intermediate ABI-v3 artifact.
-- SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
-  project may later exist only for the example consumer application.
-- `Package.swift` uses Swift tools 6.2 and keeps its bridge dependency private
-  to the Swift implementation target. It pins all three immutable
-  `binary-0.2.0` assets with AnyDoc 0.2.4 / ABI v3 and exactly 12 exports.
-  Repository verification retains `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` to use the
-  verified locally built platform artifact. The published 0.1.5 Swift package
-  still uses the macOS ABI-v2 archive and cannot satisfy the new source.
-- Native GNU/Linux artifact bundles are published and checksum-pinned for
-  `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. The 0.2.0 Swift
-  package release remains pending ordinary Cargo-free remote-consumer
-  verification on macOS arm64 and both native Linux architectures.
-- Native artifacts built from this revision embed the project license and the
-  generated third-party notices before signing or archiving. The immutable
-  published archive contains those resources and is not rewritten; publish a
-  new native archive for any future resource change.
-- Empty layout directories use `.gitkeep`. Remove those placeholders when real
-  files land, and update this section as implementation milestones change.
+- [README.md](README.md): consumer API, requirements, supported formats, and
+  limitations.
+- [docs/architecture.md](docs/architecture.md): module responsibilities,
+  runtime behavior, ownership, and invariants.
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup, verification, artifact generation,
+  and dependency or ABI changes.
+- [docs/releasing.md](docs/releasing.md): release authorization, publishing
+  sequence, and artifact immutability.
 
-## Design rules
+Keep release status, version numbers, architecture explanations, and command
+recipes in those documents rather than repeating them here. Verify contracts
+against the implementation, tests, and pinned upstream source. If they
+conflict, stop and surface the conflict; do not guess, weaken a requirement,
+or substitute the latest upstream branch as authority.
 
-- Implement one deep module behind the public interface in
-  `Sources/AnyDocSwift`. Do not add public protocols, factories, registries,
-  format-specific converters, or native types.
-- Keep the Swift-to-C adapter private. C and Rust declarations must not appear
-  in the generated Swift interface.
-- Put behavior at the seam that owns it. Follow the responsibility split in
-  the architecture guide instead of spreading normalization, scheduling, error
-  translation, detection, or ownership rules across layers.
+## Implementation and testing rules
+
+- Do not add public protocols, factories, registries, format-specific
+  converters, or native types.
 - Internal seams are allowed only for real variation or deterministic fault
   injection. Do not introduce pass-through wrappers or public test hooks.
-- Keep unsafe pointer work concentrated at the FFI seam and document the
-  lifetime, bounds, and ownership assumptions next to it.
-
-## High-risk changes
-
-- Treat the documented concurrency, cancellation, error-code, panic, and
-  allocation rules as indivisible invariants. Changes in these areas require
-  focused tests at the same time as the implementation.
+- Document unsafe pointer lifetime, bounds, and ownership assumptions next to
+  the code that relies on them.
+- Changes to documented concurrency, cancellation, error-code, panic, or
+  allocation rules require focused tests alongside the implementation.
 - Test observable Swift behavior through the public interface. Test below it
   only for ABI behavior that cannot be observed safely from Swift.
 - Use deterministic gates, continuations, or canonical events for concurrency
   tests. Do not synchronize with timing sleeps.
-- Never parse human-readable upstream messages or logs to recover structured
-  behavior, and never include document contents in diagnostics.
 
-## Reproducibility and artifacts
+## Completion
 
-- Treat the upstream revision, Rust toolchain, `Cargo.lock`, license policy,
-  generated notices, snapshots, platform artifacts, and checksums as one
-  intentional upgrade unit. Do not change one incidentally.
-- Clean Rust builds resolve the locked dependency graph from crates.io. Tests
-  themselves must not access network resources at runtime.
-- Derive native libraries and platform linker settings from the release
-  artifact. Do not guess or rely on the developer machine's ambient state.
-- Consuming builds must never invoke Cargo or link against an unpackaged local
-  Rust build.
-
-## Verification
-
-- Run Rust checks from `Rust/anydoc-swift-bridge` using the configured
-  toolchain. Run Swift checks from the repository root.
-- Keep Swift sources and the manifest clean under
-  `swift format lint --strict --recursive Package.swift Sources Tests`.
-- Use focused checks while iterating, then run `just final-check` before handing
-  off a completed change. It composes workflow linting, diff validation, and
-  the Rust and Swift CI recipes. Do not add no-op scripts or placeholder
-  artifacts merely to make that list appear green.
-- Run `just update-licenses` after an intentional native dependency change and
-  `just check-licenses` to prove the committed notices still match the locked
-  native release graph.
-- Replace the bootstrap import test with behavioral tests as the public
-  interface is implemented.
-- Never report an unrun check as passing. Record the exact command, result, and
-  any acceptance criterion that remains unverified.
-
-## Documentation and completion
-
-- Keep implementation, the architecture overview, README, project license,
-  third-party notices, and examples consistent. A user-approved contract
-  change updates them together.
-- Report actual artifact architecture, checksum, linker settings, verifier
-  results, and remaining gaps; do not claim completion early.
+- Follow the [verification workflow](CONTRIBUTING.md#build-and-test) before
+  handing off a change. Do not add no-op scripts or placeholder artifacts to
+  make checks appear green.
+- Report the exact commands run, their results, and any unverified acceptance
+  criteria. Never report an unrun check as passing or claim completion early.
+- Keep implementation, documentation, examples, and licensing consistent;
+  update affected material together when a contract changes.
+- Refer to the upstream library as `anydoc` in lowercase. Preserve the
+  `AnyDocSwift` project name and existing API identifiers.
