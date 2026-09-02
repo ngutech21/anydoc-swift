@@ -308,3 +308,7 @@ final-check:
     actionlint
     git diff --check
     just ci
+
+# Convert the rich DOCX fixture with the command-line example.
+run-example:
+    swift run --package-path Examples/AnyDocSwiftExample AnyDocSwiftExample Tests/Fixtures/docx/handmade-rich.docx

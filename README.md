@@ -17,25 +17,14 @@ by, or maintained by Firecrawl.
 
 - Swift 6.2 or later
 - macOS 13 or later on Apple Silicon, or GNU/Linux on `x86_64` or `aarch64`
-  with glibc 2.26 or later for 0.2.0
+  with glibc 2.26 or later
 
 This README documents **AnyDocSwift 0.2.0**, which embeds **AnyDoc 0.2.4** with
 bridge ABI v3. Its manifest pins the published immutable
 [`binary-0.2.0`](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.0)
-artifacts for all three platforms. The Swift package `0.2.0` tag has not yet
-been published; the latest published Swift package remains
-[`0.1.5`](https://github.com/ngutech21/anydoc-swift/releases/tag/0.1.5), for macOS
-arm64 only.
-
-| Swift package | Package status | Native release | Embedded AnyDoc | Bridge ABI |
-| --- | --- | --- | --- | --- |
-| `0.2.0` | Awaiting Swift package tag | `binary-0.2.0` (published) | `0.2.4` | 3 |
-| `0.1.5` | Published, macOS arm64 | `binary-0.1.5` (published) | `0.2.4` | 2 |
+artifacts for all three platforms. 
 
 ## Installation
-
-For the 0.2.0 API shown below, use this dependency once the Swift package
-`0.2.0` tag is published:
 
 ```swift
 dependencies: [
