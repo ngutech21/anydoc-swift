@@ -93,7 +93,7 @@ fn parse_canonical_format(format: &str) -> Result<anydoc::Format, BridgeFailure>
         "csv" => Ok(anydoc::Format::Csv),
         _ => Err(BridgeFailure::new(
             super::INVALID_INPUT_CODE,
-            "format_utf8 must name a canonical AnyDoc format",
+            "format_utf8 must name a canonical anydoc format",
         )),
     }
 }

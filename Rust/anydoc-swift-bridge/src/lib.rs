@@ -13,7 +13,7 @@ use std::{ptr, slice, str};
 
 const ABI_VERSION: u32 = 3;
 const ENGINE_VERSION: &[u8] =
-    b"AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3";
+    b"anydoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3";
 
 const INVALID_INPUT_CODE: &str = "wrapper.invalidInput";
 const INPUT_LIMIT_CODE: &str = "wrapper.inputLimit";

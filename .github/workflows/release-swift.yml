@@ -46,7 +46,7 @@ jobs:
         run: |
           grep -Fq "const ABI_VERSION: u32 = $BRIDGE_ABI_VERSION;" \
             Rust/anydoc-swift-bridge/src/lib.rs
-          grep -Fq "b\"AnyDoc $EMBEDDED_ANYDOC_VERSION (" \
+          grep -Fq "b\"anydoc $EMBEDDED_ANYDOC_VERSION (" \
             Rust/anydoc-swift-bridge/src/lib.rs
           expected_assets=(
             AnyDocSwiftBridge.xcframework.zip
@@ -232,8 +232,8 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "AnyDocSwift $RELEASE_TAG (AnyDoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)" \
-            --notes "Embeds AnyDoc $EMBEDDED_ANYDOC_VERSION with bridge ABI v$BRIDGE_ABI_VERSION." \
+            --title "AnyDocSwift $RELEASE_TAG (anydoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)" \
+            --notes "Embeds anydoc $EMBEDDED_ANYDOC_VERSION with bridge ABI v$BRIDGE_ABI_VERSION." \
             --generate-notes \
             --latest
 

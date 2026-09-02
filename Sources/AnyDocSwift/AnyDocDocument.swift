@@ -1,6 +1,6 @@
 import Foundation
 
-/// An information-preserving, self-contained document parsed by AnyDoc.
+/// An information-preserving, self-contained document parsed by anydoc.
 ///
 /// The graph is read-only parser output. Embedded assets retain their exact
 /// source bytes, so the value remains usable after the input buffer is gone.

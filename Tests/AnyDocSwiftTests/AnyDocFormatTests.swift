@@ -3,7 +3,7 @@ import XCTest
 
 final class AnyDocFormatTests: XCTestCase, @unchecked Sendable {
   func testExtensionLookupMatchesPinnedUpstream() {
-    // AnyDoc 0.2.4, revision 42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c:
+    // anydoc 0.2.4, revision 42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c:
     // Format::from_extension in src/lib.rs.
     let recognized: [(String, AnyDocFormat)] = [
       ("doc", .doc),

@@ -71,7 +71,7 @@ jobs:
         run: |
           grep -Fq "const ABI_VERSION: u32 = $BRIDGE_ABI_VERSION;" \
             Rust/anydoc-swift-bridge/src/lib.rs
-          grep -Fq "b\"AnyDoc $EMBEDDED_ANYDOC_VERSION (" \
+          grep -Fq "b\"anydoc $EMBEDDED_ANYDOC_VERSION (" \
             Rust/anydoc-swift-bridge/src/lib.rs
 
   macos:
@@ -306,7 +306,7 @@ jobs:
         run: |
           notes_file="$RUNNER_TEMP/release-notes.md"
           {
-            echo "Embeds AnyDoc $EMBEDDED_ANYDOC_VERSION with bridge ABI v$BRIDGE_ABI_VERSION."
+            echo "Embeds anydoc $EMBEDDED_ANYDOC_VERSION with bridge ABI v$BRIDGE_ABI_VERSION."
             echo
             echo 'SwiftPM checksums (SHA-256):'
             echo
@@ -326,7 +326,7 @@ jobs:
               -F draft=true \
               -f make_latest=false \
               -F body="@$notes_file" \
-              -f name="$RELEASE_TAG (AnyDoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)" \
+              -f name="$RELEASE_TAG (anydoc $EMBEDDED_ANYDOC_VERSION, ABI v$BRIDGE_ABI_VERSION)" \
               --jq '.id'
           )"
           if [[ ! "$release_id" =~ ^[1-9][0-9]*$ ]]; then

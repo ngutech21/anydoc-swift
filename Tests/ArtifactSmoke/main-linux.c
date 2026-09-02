@@ -6,7 +6,7 @@
 
 int main(void) {
   static const char expected_version[] =
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); "
+      "anydoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); "
       "AnyDocSwift bridge ABI 3";
 
   size_t length = 0;

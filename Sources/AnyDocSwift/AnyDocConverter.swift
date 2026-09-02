@@ -33,7 +33,7 @@ public actor AnyDocConverter {
 
   typealias Enqueue = @Sendable (@escaping @Sendable () -> Void) -> Void
 
-  static let unavailableEngineVersion = "AnyDoc engine version unavailable"
+  static let unavailableEngineVersion = "anydoc engine version unavailable"
 
   private let limits: Limits
   private let adapter: AnyDocCAdapter
@@ -56,7 +56,7 @@ public actor AnyDocConverter {
     self.enqueue = enqueue
   }
 
-  /// The embedded AnyDoc version, originating revision, and bridge ABI version.
+  /// The embedded anydoc version, originating revision, and bridge ABI version.
   ///
   /// A malformed or incompatible packaged bridge produces a fixed, non-sensitive
   /// fallback because this property is intentionally nonthrowing.
@@ -71,7 +71,7 @@ public actor AnyDocConverter {
   /// Converts document bytes to GitHub-Flavored Markdown.
   ///
   /// A supplied format authoritatively selects its parser. Passing `nil`
-  /// delegates format detection to AnyDoc; signature-less CSV must be named.
+  /// delegates format detection to anydoc; signature-less CSV must be named.
   public func markdown(
     from data: Data,
     format: AnyDocFormat? = nil
@@ -84,7 +84,7 @@ public actor AnyDocConverter {
   /// Parses document bytes into a self-contained structured document.
   ///
   /// A supplied format authoritatively selects its parser. Passing `nil`
-  /// delegates format detection to AnyDoc. PDF has no document-model form and
+  /// delegates format detection to anydoc. PDF has no document-model form and
   /// is supported only by ``markdown(from:format:)``.
   public func document(
     from data: Data,

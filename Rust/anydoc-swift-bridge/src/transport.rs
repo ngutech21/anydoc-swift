@@ -388,7 +388,7 @@ fn convert_table(table: source::Table) -> Result<Table, BridgeFailure> {
 fn convert_cell_slot(slot: source::CellSlot) -> Result<CellSlot, BridgeFailure> {
     match slot {
         source::CellSlot::Origin(mut cell) => {
-            // AnyDoc 0.2.4's GridBuilder fills gaps with Cell::default(): an
+            // anydoc 0.2.4's GridBuilder fills gaps with Cell::default(): an
             // empty 0x0 origin representing one unoccupied grid position.
             // Canonicalize only that placeholder before enforcing the wire
             // contract's positive spans in Swift.

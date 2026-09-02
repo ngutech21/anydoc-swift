@@ -15,7 +15,7 @@ final class AnyDocCAdapterTests: XCTestCase {
   func testLiveAdapterReportsPinnedVersionAndConvertsRealFixtures() throws {
     XCTAssertEqual(
       try AnyDocCAdapter.live.engineVersion(),
-      "AnyDoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3"
+      "anydoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3"
     )
 
     let rtf = try AnyDocCAdapter.live.markdown(

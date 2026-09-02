@@ -88,7 +88,7 @@ Markdown is pinned in the test that consumes the fixture.
 
 - Source: locally authored EPUB 3 regression fixture for AnyDocSwift
 - Content: a table with a two-row span in its third column and only one cell
-  in its second row; the pinned AnyDoc 0.2.4 grid builder inserts an empty
+  in its second row; the pinned anydoc 0.2.4 grid builder inserts an empty
   zero-span filler before the covered position
 - Archive: uncompressed ZIP entries, `mimetype` first, with fixed
   `1980-01-01T00:00:00` entry timestamps
