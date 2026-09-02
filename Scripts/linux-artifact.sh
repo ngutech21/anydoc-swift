@@ -265,7 +265,7 @@ unpack_archive() {
   local -a top_level_entries
   [[ -f "$source_archive" ]]
   rm -rf "$verify_root"
-  mkdir -p "$verify_root"
+  mkdir -p "$build_root" "$verify_root"
   unzip -q "$source_archive" -d "$verify_root"
   mapfile -t top_level_entries < <(
     find "$verify_root" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort
