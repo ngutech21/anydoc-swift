@@ -169,16 +169,21 @@ jobs:
             --platform "linux/${{ matrix.docker_arch }}" \
             --env ANYDOC_SWIFT_ARTIFACT_VERSION \
             --env ANYDOC_SWIFT_LINUX_TARGET \
+            --env ARCHIVE_PATH \
+            --env ASSET_NAME \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             "$LINUX_BUILD_IMAGE" \
             bash -euo pipefail -c '
               Scripts/linux-artifact.sh ci
               Scripts/linux-artifact.sh memory-probe
+              test -f "$ARCHIVE_PATH"
+              # The container owns the artifact directory, so write the checksum here.
+              (
+                cd "$(dirname "$ARCHIVE_PATH")"
+                sha256sum "$ASSET_NAME" > "$ASSET_NAME.sha256"
+              )
             '
-          test -f "$ARCHIVE_PATH"
-          checksum="$(sha256sum "$ARCHIVE_PATH" | awk '{ print $1 }')"
-          printf '%s  %s\n' "$checksum" "$ASSET_NAME" > "$ARCHIVE_PATH.sha256"
 
       - name: Preserve verified artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
