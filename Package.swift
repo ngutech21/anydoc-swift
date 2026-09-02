@@ -15,23 +15,34 @@ let useLocallyBuiltBridge =
     : .binaryTarget(
       name: "AnyDocSwiftBridge",
       url:
-        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.1.5/AnyDocSwiftBridge.xcframework.zip",
-      checksum: "75b006807443a1195ae9a8ee37b504e7fe336cfe06d29e2bb4a6ca563bece98d"
+        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge.xcframework.zip",
+      checksum: "2feaf71ce75dc101ba3c07f065950fb95da72f99c1de1e891d88611814165576"
     )
   let bridgeLinkerSettings: [LinkerSetting] = []
 #elseif os(Linux) && (arch(x86_64) || arch(arm64))
-  guard useLocallyBuiltBridge else {
-    fatalError(
-      "Linux artifact support is staged but not published. "
-        + "Build the native artifact and set ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1, "
-        + "or use a package release that pins binary-0.2.0."
+  let bridgeTarget: Target
+  if useLocallyBuiltBridge {
+    bridgeTarget = .binaryTarget(
+      name: "AnyDocSwiftBridge",
+      path: ".build/artifact/verified/AnyDocSwiftBridge.artifactbundle"
     )
+  } else {
+    #if arch(x86_64)
+      bridgeTarget = .binaryTarget(
+        name: "AnyDocSwiftBridge",
+        url:
+          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip",
+        checksum: "d9311beacac609e99404e15dfedd3ea0defaa2d48a83cda38f5220067104a3a6"
+      )
+    #else
+      bridgeTarget = .binaryTarget(
+        name: "AnyDocSwiftBridge",
+        url:
+          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip",
+        checksum: "aafa2ef2e5b20ae5ca4d2ba40f68bf603c8c8dd0f783f918ff816eeac013597f"
+      )
+    #endif
   }
-
-  let bridgeTarget: Target = .binaryTarget(
-    name: "AnyDocSwiftBridge",
-    path: ".build/artifact/verified/AnyDocSwiftBridge.artifactbundle"
-  )
   // Mirrors the non-default entries in Native/linux/native-static-libs.txt.
   let bridgeLinkerSettings: [LinkerSetting] = [
     .linkedLibrary("rt", .when(platforms: [.linux])),

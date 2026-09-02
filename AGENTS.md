@@ -25,17 +25,15 @@
 - SwiftPM is the root project. Do not create a root `.xcodeproj`; an Xcode
   project may later exist only for the example consumer application.
 - `Package.swift` uses Swift tools 6.2 and keeps its bridge dependency private
-  to the Swift implementation target. The published 0.1.5 macOS archive remains
-  AnyDoc 0.2.4 / ABI v2 with nine exports; it cannot satisfy the new source.
-  Repository verification must use the locally built AnyDoc 0.2.4 / ABI v3
-  artifact with exactly 12 exports until all three immutable `binary-0.2.0`
-  assets are published and checksum-pinned atomically.
-- Native GNU/Linux artifact-bundle tooling is staged for
-  `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. Linux manifest
-  evaluation intentionally requires the verified local artifact until all three
-  immutable native assets exist and their URLs and checksums can be pinned
-  atomically. Do not describe ordinary Linux package consumers as supported
-  before that follow-up change.
+  to the Swift implementation target. It pins all three immutable
+  `binary-0.2.0` assets with AnyDoc 0.2.4 / ABI v3 and exactly 12 exports.
+  Repository verification retains `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` to use the
+  verified locally built platform artifact. The published 0.1.5 Swift package
+  still uses the macOS ABI-v2 archive and cannot satisfy the new source.
+- Native GNU/Linux artifact bundles are published and checksum-pinned for
+  `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`. The 0.2.0 Swift
+  package release remains pending ordinary Cargo-free remote-consumer
+  verification on macOS arm64 and both native Linux architectures.
 - Native artifacts built from this revision embed the project license and the
   generated third-party notices before signing or archiving. The immutable
   published archive contains those resources and is not rewritten; publish a

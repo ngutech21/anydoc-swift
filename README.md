@@ -2,9 +2,9 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ngutech21/anydoc-swift/ci.yml?branch=master&event=push&label=CI)](https://github.com/ngutech21/anydoc-swift/actions/workflows/ci.yml)
 
-AnyDocSwift converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
-and CSV data to GitHub-Flavored Markdown in Swift applications. The 0.2.0
-source also exposes AnyDoc's complete read-only document graph, including
+AnyDocSwift 0.2.0 converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
+and CSV data to GitHub-Flavored Markdown in Swift applications. It also
+exposes AnyDoc's complete read-only document graph, including
 styles, links, canonical tables, notes, and embedded asset bytes.
 
 Conversion runs locally and in-process through the Rust
@@ -16,37 +16,42 @@ by, or maintained by Firecrawl.
 ## Requirements and release status
 
 - Swift 6.2 or later
-- macOS 13 or later on Apple Silicon for the published `0.1.5` release
+- macOS 13 or later on Apple Silicon, or GNU/Linux on `x86_64` or `aarch64`
+  with glibc 2.26 or later for 0.2.0
 
-The structured-document API is the unreleased 0.2.0 source contract. It is
-implemented together with bridge ABI v3 and will not use an intermediate ABI-v3
-artifact. Native GNU/Linux artifacts for `x86_64` and `aarch64` are also staged
-in source, but ordinary Linux consumption remains disabled until all three
-immutable `binary-0.2.0` assets are published, independently verified, and
-checksum-pinned atomically.
+This README documents **AnyDocSwift 0.2.0**, which embeds **AnyDoc 0.2.4** with
+bridge ABI v3. Its manifest pins the published immutable
+[`binary-0.2.0`](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.0)
+artifacts for all three platforms. The Swift package `0.2.0` tag has not yet
+been published; the latest published Swift package remains
+[`0.1.5`](https://github.com/ngutech21/anydoc-swift/releases/tag/0.1.5), for macOS
+arm64 only.
 
-| Swift package | Status | Embedded AnyDoc | Bridge ABI | C exports |
+| Swift package | Package status | Native release | Embedded AnyDoc | Bridge ABI |
 | --- | --- | --- | --- | --- |
-| `0.1.5` | Published, macOS arm64 | `0.2.4` | 2 | 9 |
-| `0.2.0` | Unreleased source | `0.2.4` (`42bf1c5…`) | 3 | 12 |
+| `0.2.0` | Awaiting Swift package tag | `binary-0.2.0` (published) | `0.2.4` | 3 |
+| `0.1.5` | Published, macOS arm64 | `binary-0.1.5` (published) | `0.2.4` | 2 |
 
 ## Installation
 
-The currently published package remains 0.1.5:
+For the 0.2.0 API shown below, use this dependency once the Swift package
+`0.2.0` tag is published:
 
 ```swift
 dependencies: [
   .package(
     url: "https://github.com/ngutech21/anydoc-swift.git",
-    exact: "0.1.5"
+    exact: "0.2.0"
   )
 ]
 ```
 
 Add `.product(name: "AnyDocSwift", package: "anydoc-swift")` to the consuming
 target. SwiftPM downloads and verifies the checksum-pinned native artifact.
-The examples below describe the 0.2.0 source API and become remotely consumable
-after its binary and Swift package releases complete.
+Swift package and native binary tags are separate: `binary-0.2.0` is the
+artifact release, not a Swift package version. Until `0.2.0` is tagged, the
+published dependency is `exact: "0.1.5"`; it does not include the structured
+document API or Linux support described here.
 
 ## Quick start
 

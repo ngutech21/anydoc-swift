@@ -232,11 +232,13 @@ one-based page numbers and total page count; no partial Markdown is returned.
 
 ## Binary distribution and release boundary
 
-The source implementation is the unreleased 0.2.0/ABI-v3 unit. The currently
-published 0.1.5 package still pins the macOS ABI-v2 XCFramework. Source
-verification therefore selects a newly built local artifact with
-`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`; the three remote 0.2.0 URLs and checksums must
-not be written before one immutable binary release succeeds.
+The source implementation is the unreleased 0.2.0/ABI-v3 unit. Its manifest
+pins all three artifacts from the published immutable `binary-0.2.0` release,
+selecting the URL and checksum for the native host. Repository verification
+continues to select a newly built local artifact with
+`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`. The published 0.1.5 Swift package still pins
+the macOS ABI-v2 XCFramework; the 0.2.0 Swift package release remains pending
+remote-consumer verification on all three platforms.
 
 macOS arm64 uses a dynamic XCFramework to isolate its Rust runtime. GNU/Linux
 x86_64 and aarch64 use target-specific SE-0482 static-library artifact bundles.
