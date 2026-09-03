@@ -79,11 +79,15 @@ It also supports manual dispatch. Swift uses the same Xcode version as CI and
 builds the root package explicitly for ARM64, using the checksum-pinned
 published bridge and a fresh build directory. This avoids autobuild discovering
 the standalone example and the environment-dependent memory probe package.
+Use `swift build --arch arm64` to select the target without wrapping the compiler
+process in `arch -arm64`, which can prevent CodeQL from tracing the build.
 
-After the workflow is merged, switch the repository from CodeQL default setup
-to advanced setup in **Settings > Advanced Security > CodeQL analysis** and
-run the **CodeQL** workflow. Default setup must be disabled for this workflow's
-analysis uploads to be accepted. Confirm that all five language jobs pass.
+Keep CodeQL configured with advanced setup in **Settings > Advanced Security >
+CodeQL analysis**. Default setup must remain disabled for this workflow's
+analysis uploads to be accepted. Maintain only `.github/workflows/codeql.yml`;
+if GitHub generates a `codeql-advanced.yml` when switching setup modes, remove
+that duplicate. Run the **CodeQL** workflow and confirm that all five language
+jobs pass after changing the configuration.
 
 ## Test coverage
 
