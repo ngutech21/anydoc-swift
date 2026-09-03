@@ -48,15 +48,22 @@ jobs:
             Rust/anydoc-swift-bridge/src/lib.rs
           grep -Fq "b\"anydoc $EMBEDDED_ANYDOC_VERSION (" \
             Rust/anydoc-swift-bridge/src/lib.rs
+          binary_tag="$(
+            sed -n 's@.*releases/download/\(binary-[^/]*\)/.*@\1@p' Package.swift | sort -u
+          )"
+          if [[ ! "$binary_tag" =~ ^binary-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Package.swift must pin all three artifacts to one binary-MAJOR.MINOR.PATCH release" >&2
+            exit 1
+          fi
           expected_assets=(
             AnyDocSwiftBridge.xcframework.zip
             AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip
             AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip
           )
           for asset in "${expected_assets[@]}"; do
-            grep -Fq "/binary-$RELEASE_TAG/$asset" Package.swift
+            grep -Fq "/$binary_tag/$asset" Package.swift
           done
-          url_count="$(grep -Fc "/binary-$RELEASE_TAG/" Package.swift || true)"
+          url_count="$(grep -Fc "/$binary_tag/" Package.swift || true)"
           checksum_count="$(grep -Fc 'checksum:' Package.swift || true)"
           test "$url_count" = "3"
           test "$checksum_count" = "3"

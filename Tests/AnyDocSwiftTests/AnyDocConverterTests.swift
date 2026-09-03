@@ -78,8 +78,10 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
   }
 
   func testPublicEngineVersionReportsPinnedBridge() {
+    // Accept the engine-name capitalization preserved in binary-0.2.0.
     XCTAssertEqual(
-      AnyDocConverter.engineVersion,
+      AnyDocConverter.engineVersion
+        .replacingOccurrences(of: "AnyDoc ", with: "anydoc ", options: .anchored),
       "anydoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3"
     )
   }

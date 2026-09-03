@@ -6,7 +6,7 @@ authorize publication.
 
 ## Release model
 
-Each release uses two immutable tags:
+Swift packages and native artifacts use separate immutable tags:
 
 - `binary-X.Y.Z` publishes three native archives:
   `AnyDocSwiftBridge.xcframework.zip`,
@@ -16,10 +16,13 @@ Each release uses two immutable tags:
   the appropriate platform archive.
 
 Both workflows accept `MAJOR.MINOR.PATCH` without a leading `v`, run from
-`master`, and refuse an existing tag or release. The current Swift release
-workflow requires all three manifest URLs to reference `binary-X.Y.Z` for the
-same requested Swift package version. It does not support publishing a new
-Swift version against an older native release.
+`master`, and refuse an existing tag or release. Swift and native release
+versions can advance independently. All three manifest URLs must reference
+one native release, but its version need not match the Swift package version.
+Swift-only changes can reuse the existing native URLs and checksums; for
+example, Swift `0.2.1` can continue to use `binary-0.2.0`. The Swift workflow
+still builds and tests the package against those published artifacts on every
+supported platform before publication.
 
 ## Prerequisites
 
@@ -43,8 +46,13 @@ Swift version against an older native release.
 ### 1. Prepare the candidate
 
 Choose an unused `X.Y.Z` and merge the intended implementation and tooling
-changes into `master`. Keep the existing manifest artifact pins until the new
-native release has passed verification.
+changes into `master`. If native artifacts need updating, keep the existing
+manifest artifact pins until the new native release has passed verification.
+
+For Swift-only changes that remain compatible with the pinned native artifacts,
+keep all three URLs and checksums unchanged and skip steps 2 and 3. A new
+native release is required only when shipping changes to native artifacts or
+their bundled resources and metadata.
 
 For dependency or ABI changes, follow
 [Dependency and ABI changes](../CONTRIBUTING.md#dependency-and-abi-changes).
@@ -60,11 +68,12 @@ README and compatibility record, not the architecture guide or `AGENTS.md`.
 Run `just final-check` from the repository root and resolve failures before
 starting publication.
 
-### 2. Publish and verify the native artifacts
+### 2. Publish and verify new native artifacts, when needed
 
 With explicit maintainer authorization, run
 [Release Binary](../.github/workflows/release-binary.yml) from `master` with
-the chosen version.
+an unused native version. It may match the Swift package version, but does not
+have to.
 
 The workflow builds and checks all three native artifacts before creating a
 tag and draft release. It then downloads each draft asset on its native
@@ -82,10 +91,10 @@ release URL, three archive URLs and checksums, and verification results.
 Draft creation, uploads, and downloads use the release ID returned by the API;
 do not rediscover a draft by assuming it appears in the public release list.
 
-### 3. Pin the published artifacts
+### 3. Pin newly published artifacts, when needed
 
 In one change, update [Package.swift](../Package.swift) with all three URLs
-from `binary-X.Y.Z` and their verified checksums:
+from the chosen `binary-X.Y.Z` release and their verified checksums:
 
 - the macOS XCFramework for macOS arm64;
 - the x86_64 artifact bundle for GNU/Linux x86_64; and
@@ -99,7 +108,8 @@ require a new native release.
 
 ### 4. Verify the Swift package candidate
 
-Run `just final-check` again with the updated manifest. Then verify the
+Run `just final-check` with the candidate manifest, whether it retains the
+existing pins or selects newly published artifacts. Then verify the
 candidate checkout on macOS arm64 and both native Linux architectures using
 the environments configured in
 [Release Swift Package](../.github/workflows/release-swift.yml).
@@ -126,7 +136,7 @@ expectations consistent with the published artifacts.
 
 With explicit maintainer authorization, run
 [Release Swift Package](../.github/workflows/release-swift.yml) from `master`
-with the same `X.Y.Z`.
+with the Swift package version chosen in step 1.
 
 The workflow validates the manifest pins and embedded metadata, rechecks the
 complete macOS validation gate, and builds and tests the published binary
