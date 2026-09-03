@@ -13,7 +13,7 @@ Each release uses two immutable tags:
   `AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip`, and
   `AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip`.
 - `X.Y.Z` publishes the Swift package manifest that selects and checksum-pins
-  the appropriate archive for the native host.
+  the appropriate platform archive.
 
 Both workflows accept `MAJOR.MINOR.PATCH` without a leading `v`, run from
 `master`, and refuse an existing tag or release. The current Swift release
@@ -92,9 +92,10 @@ from `binary-X.Y.Z` and their verified checksums:
 - the aarch64 artifact bundle for GNU/Linux aarch64.
 
 Preserve `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1` for repository verification and the
-manifest's explicit rejection of unsupported hosts. Merge the pin update into
-`master`. Do not change the native implementation after publishing its
-artifacts; further native changes require a new native release.
+manifest's ability to run in both arm64 and x86_64 macOS processes. The macOS
+binary remains arm64-only. Merge the pin update into `master`. Do not change the
+native implementation after publishing its artifacts; further native changes
+require a new native release.
 
 ### 4. Verify the Swift package candidate
 

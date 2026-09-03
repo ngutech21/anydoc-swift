@@ -251,10 +251,12 @@ one-based page numbers and total page count; no partial Markdown is returned.
 ## Binary distribution and release boundary
 
 [`Package.swift`](../Package.swift) selects a checksum-pinned native artifact
-for macOS arm64 or GNU/Linux x86_64 and aarch64. Unsupported hosts are rejected
-when evaluating the manifest. Ordinary consumers download these packaged
-artifacts without Cargo. Repository verification continues to select a newly
-built local artifact with `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`.
+for macOS arm64 or GNU/Linux x86_64 and aarch64. On macOS, artifact selection
+depends only on the host OS: SwiftPM can evaluate the manifest in an x86_64
+process under Rosetta while building an arm64 target. The macOS binary remains
+arm64-only. Ordinary consumers download these packaged artifacts without Cargo.
+Repository verification continues to select a newly built local artifact with
+`ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`.
 
 macOS arm64 uses a dynamic XCFramework to isolate its Rust runtime. GNU/Linux
 x86_64 and aarch64 use target-specific static-library artifact bundles.

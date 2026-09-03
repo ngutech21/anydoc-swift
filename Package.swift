@@ -5,7 +5,9 @@ import PackageDescription
 let useLocallyBuiltBridge =
   Context.environment["ANYDOC_SWIFT_USE_LOCAL_BRIDGE"] == "1"
 
-#if os(macOS) && arch(arm64)
+// SwiftPM evaluates this manifest for the host process, which may run under
+// Rosetta even when the build targets arm64. The macOS binary is arm64-only.
+#if os(macOS)
   let bridgeTarget: Target =
     useLocallyBuiltBridge
     ? .binaryTarget(
