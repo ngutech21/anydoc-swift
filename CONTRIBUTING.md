@@ -71,6 +71,20 @@ just artifact-linux-container
 Use focused checks while iterating. Run `just final-check` before handing off a
 completed change, and report the exact result of every claimed verifier.
 
+## Code scanning
+
+[CodeQL](.github/workflows/codeql.yml) scans Swift, Rust, C/C++, Python, and
+GitHub Actions on pull requests, pushes to `master`, and a weekly schedule.
+It also supports manual dispatch. Swift uses the same Xcode version as CI and
+builds the root package explicitly for ARM64, using the checksum-pinned
+published bridge and a fresh build directory. This avoids autobuild discovering
+the standalone example and the environment-dependent memory probe package.
+
+After the workflow is merged, switch the repository from CodeQL default setup
+to advanced setup in **Settings > Advanced Security > CodeQL analysis** and
+run the **CodeQL** workflow. Default setup must be disabled for this workflow's
+analysis uploads to be accepted. Confirm that all five language jobs pass.
+
 ## Test coverage
 
 Tests are organized around the seams they protect:

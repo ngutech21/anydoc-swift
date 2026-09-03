@@ -1,0 +1,74 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: '29 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: swift
+            runner: macos-26
+            build-mode: manual
+          - language: rust
+            runner: ubuntu-24.04
+            build-mode: none
+          - language: c-cpp
+            runner: ubuntu-24.04
+            build-mode: none
+          - language: python
+            runner: ubuntu-24.04
+            build-mode: none
+          - language: actions
+            runner: ubuntu-24.04
+            build-mode: none
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode for Swift analysis
+        if: matrix.language == 'swift'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build Swift library
+        if: matrix.language == 'swift'
+        run: |
+          arch -arm64 xcrun swift --version
+          arch -arm64 xcrun swift build \
+            --arch arm64 \
+            --scratch-path "$RUNNER_TEMP/codeql-swift"
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: /language:${{ matrix.language }}
