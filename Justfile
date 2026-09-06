@@ -121,6 +121,7 @@ build-artifact-macos: check-licenses
     ln -s "Versions/Current/Headers" "{{ framework }}/Headers"
     ln -s "Versions/Current/Modules" "{{ framework }}/Modules"
     ln -s "Versions/Current/Resources" "{{ framework }}/Resources"
+    xcrun strip -x "{{ framework_binary }}"
     codesign --force --sign - --timestamp=none --identifier "{{ framework_bundle_identifier }}" "{{ framework }}"
     xcrun xcodebuild -create-xcframework -framework "{{ framework }}" -output "{{ xcframework }}"
     COPYFILE_DISABLE=1 ditto -c -k --keepParent "{{ xcframework }}" "{{ artifact_archive }}"

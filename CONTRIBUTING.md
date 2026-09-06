@@ -148,8 +148,10 @@ current host.
 3. Use Cargo's reported native link requirements to link that archive into a
    versioned, non-mergeable dynamic framework with a controlled `@rpath`
    install name and exactly 12 exported C symbols.
-4. Copy the project license and third-party notices into the framework before
-   signing it.
+4. Copy the project license and third-party notices into the framework, remove
+   local symbols from the linked binary with `xcrun strip -x`, then sign it.
+   Stripping preserves the exported C ABI but removes internal symbol names
+   used in diagnostics.
 5. Package the framework as an XCFramework ZIP and compute its SwiftPM
    checksum.
 6. Reopen and validate the package, including its platform, architecture,
