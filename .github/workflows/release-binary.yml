@@ -98,7 +98,7 @@ jobs:
           cargo --version
 
       - name: Install build tools
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: just,cargo-about@0.9.1
 
@@ -378,7 +378,7 @@ jobs:
           rustc --version
 
       - name: Install verification tools
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: just
 
