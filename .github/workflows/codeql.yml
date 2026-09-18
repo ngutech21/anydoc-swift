@@ -30,7 +30,8 @@ jobs:
       matrix:
         include:
           - language: swift
-            runner: xcode-27
+            # Xcode 26.2 is required below and is not installed on xcode-27.
+            runner: macos-26
             build-mode: manual
           - language: rust
             runner: ubuntu-24.04
