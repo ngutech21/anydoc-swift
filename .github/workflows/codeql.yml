@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - language: swift
-            runner: macos-26
+            runner: xcode-27
             build-mode: manual
           - language: rust
             runner: ubuntu-24.04
@@ -52,6 +52,7 @@ jobs:
 
       - name: Select Xcode for Swift analysis
         if: matrix.language == 'swift'
+        # Keep the supported Swift 6.2 compiler until CodeQL supports Swift 6.4.
         run: echo "DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer" >> "$GITHUB_ENV"
 
       - name: Initialize CodeQL

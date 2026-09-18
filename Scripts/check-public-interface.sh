@@ -10,7 +10,7 @@ case "$(uname -s)" in
   Darwin)
     target="arm64-apple-macosx13.0"
     scratch="$root/.build/swift"
-    module_directory="$scratch/arm64-apple-macosx/debug/Modules"
+    swift_command=(xcrun swift)
     bridge_directory="$root/.build/artifact/verified/AnyDocSwiftBridge.xcframework/macos-arm64"
     sdk_arguments=(-sdk "$(xcrun --show-sdk-path)")
     bridge_arguments=(-F "$bridge_directory")
@@ -23,7 +23,7 @@ case "$(uname -s)" in
     )"
     target="${ANYDOC_SWIFT_LINUX_TARGET:-$detected_target}"
     scratch="$root/.build/swift-$target"
-    module_directory="$scratch/$target/debug/Modules"
+    swift_command=(swift)
     bridge_directory="$root/.build/artifact/verified/AnyDocSwiftBridge.artifactbundle/$target/include"
     sdk_arguments=()
     bridge_arguments=(
@@ -38,12 +38,24 @@ case "$(uname -s)" in
     ;;
 esac
 
-[[ -d "$module_directory" ]] || {
-  echo "build AnyDocSwift in debug configuration before checking its interface" >&2
-  exit 1
-}
 [[ -d "$bridge_directory" ]] || {
   echo "verified AnyDocSwiftBridge artifact is missing" >&2
+  exit 1
+}
+
+binary_directory="$(
+  env ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1 "${swift_command[@]}" build \
+    --package-path "$root" --scratch-path "$scratch" --show-bin-path
+)"
+# Swift 6.4's Swift Build puts modules beside products; the older native build
+# system uses a Modules subdirectory. Query the active toolchain so stale output
+# from a different build system is never selected.
+module_directory="$binary_directory"
+if [[ -e "$binary_directory/Modules/AnyDocSwift.swiftmodule" ]]; then
+  module_directory="$binary_directory/Modules"
+fi
+[[ -e "$module_directory/AnyDocSwift.swiftmodule" ]] || {
+  echo "build AnyDocSwift in debug configuration before checking its interface" >&2
   exit 1
 }
 

@@ -77,12 +77,12 @@ jobs:
   macos:
     name: Build macOS arm64 artifact
     needs: validate
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       ARCHIVE_PATH: .build/artifacts/AnyDocSwiftBridge.xcframework.zip
       ASSET_NAME: AnyDocSwiftBridge.xcframework.zip
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,7 +92,9 @@ jobs:
       - name: Report pinned toolchains
         run: |
           test "$(uname -m)" = "arm64"
+          xcodebuild -version | grep -Fx 'Xcode 27.0'
           xcrun swift --version
+          test "$(xcrun swift --version | sed -n 's/.*Apple Swift version \([0-9]*\.[0-9]*\).*/\1/p')" = "6.4"
           rustup show active-toolchain
           rustc --version
           cargo --version
@@ -347,16 +349,28 @@ jobs:
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
   verify-macos:
-    name: Verify downloaded macOS draft asset
+    name: Verify downloaded macOS draft asset / Swift ${{ matrix.swift }}
     needs: draft
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: xcode-27
+            xcode: '27.0'
+            swift: '6.4'
+          - runner: macos-26
+            xcode: '26.2'
+            swift: '6.2'
     permissions:
       # GitHub requires push access to read unpublished draft release assets.
       contents: write
     env:
       ASSET_NAME: AnyDocSwiftBridge.xcframework.zip
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      EXPECTED_XCODE_VERSION: ${{ matrix.xcode }}
+      EXPECTED_SWIFT_VERSION: ${{ matrix.swift }}
       RELEASE_ID: ${{ needs.draft.outputs.release_id }}
     steps:
       - name: Check out repository
@@ -373,7 +387,9 @@ jobs:
       - name: Report pinned toolchains
         run: |
           test "$(uname -m)" = "arm64"
+          xcodebuild -version | grep -Fx "Xcode $EXPECTED_XCODE_VERSION"
           xcrun swift --version
+          test "$(xcrun swift --version | sed -n 's/.*Apple Swift version \([0-9]*\.[0-9]*\).*/\1/p')" = "$EXPECTED_SWIFT_VERSION"
           rustup show active-toolchain
           rustc --version
 
