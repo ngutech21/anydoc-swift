@@ -81,6 +81,12 @@ architecture, checks its bytes and SHA-256 checksum against the original build,
 and repeats artifact verification. Linux also repeats Swift builds, tests, and
 Rust-runtime coexistence checks against the downloaded artifact.
 
+The macOS artifact is built with Xcode 27.0 / Swift 6.4. Downloaded macOS
+artifacts are verified with both Xcode 27.0 / Swift 6.4 and Xcode 26.2 / Swift
+6.2 before publication, including the memory qualification on both toolchains.
+Swift package releases also build and test the published macOS artifact with
+both toolchains. This preserves the Swift 6.2 consumer minimum.
+
 Both original and downloaded artifacts undergo the Release memory qualification
 defined in [Scripts/memory-probe.sh](../Scripts/memory-probe.sh). The workflow
 publishes only after all native verification jobs succeed, then verifies that

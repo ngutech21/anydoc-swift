@@ -93,14 +93,26 @@ jobs:
           fi
 
   verify-macos:
-    name: Verify macOS package and remote consumer
+    name: Verify macOS package and remote consumer / Swift ${{ matrix.swift }}
     needs: validate
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: xcode-27
+            xcode: '27.0'
+            swift: '6.4'
+          - runner: macos-26
+            xcode: '26.2'
+            swift: '6.2'
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      EXPECTED_XCODE_VERSION: ${{ matrix.xcode }}
+      EXPECTED_SWIFT_VERSION: ${{ matrix.swift }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,7 +122,9 @@ jobs:
       - name: Report pinned toolchains
         run: |
           test "$(uname -m)" = "arm64"
+          xcodebuild -version | grep -Fx "Xcode $EXPECTED_XCODE_VERSION"
           xcrun swift --version
+          test "$(xcrun swift --version | sed -n 's/.*Apple Swift version \([0-9]*\.[0-9]*\).*/\1/p')" = "$EXPECTED_SWIFT_VERSION"
           rustup show active-toolchain
           rustc --version
           cargo --version

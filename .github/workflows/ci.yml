@@ -45,11 +45,25 @@ jobs:
         run: just ci-rust
 
   swift:
-    name: Swift / macOS arm64
-    runs-on: macos-26
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Swift / macOS arm64
+            runner: xcode-27
+            xcode: '27.0'
+            swift: '6.4'
+          - name: Swift 6.2 / macOS arm64
+            runner: macos-26
+            xcode: '26.2'
+            swift: '6.2'
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      EXPECTED_XCODE_VERSION: ${{ matrix.xcode }}
+      EXPECTED_SWIFT_VERSION: ${{ matrix.swift }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,7 +72,10 @@ jobs:
 
       - name: Report pinned toolchains
         run: |
+          test "$(uname -m)" = "arm64"
+          xcodebuild -version | grep -Fx "Xcode $EXPECTED_XCODE_VERSION"
           xcrun swift --version
+          test "$(xcrun swift --version | sed -n 's/.*Apple Swift version \([0-9]*\.[0-9]*\).*/\1/p')" = "$EXPECTED_SWIFT_VERSION"
           rustup show active-toolchain
           rustc --version
           cargo --version
@@ -72,6 +89,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
+          key: xcode-${{ matrix.xcode }}
           workspaces: Rust/anydoc-swift-bridge -> ../../.build/artifact/cargo
 
       - name: Build and test Swift package

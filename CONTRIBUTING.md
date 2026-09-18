@@ -33,6 +33,13 @@ aarch64.
 SwiftPM is the root project. Do not create a root Xcode project for package
 development.
 
+macOS CI tests Xcode 27.0 / Swift 6.4 and Xcode 26.2 / Swift 6.2. Native macOS
+releases are built with Xcode 27.0, then the downloaded artifact and Swift
+package consumers are verified with both toolchains. Keep
+`swift-tools-version: 6.2` and Swift 6.2-compatible source in every package;
+using a newer CI compiler does not raise the consumer minimum. Linux retains
+its Swift 6.2.4 / glibc 2.26 build and verification baseline.
+
 ## Build and test
 
 Run commands from the repository root unless a command says otherwise:
@@ -75,8 +82,10 @@ completed change, and report the exact result of every claimed verifier.
 
 [CodeQL](.github/workflows/codeql.yml) scans Swift, Rust, C/C++, Python, and
 GitHub Actions on pull requests, pushes to `master`, and a weekly schedule.
-It also supports manual dispatch. Swift uses the same Xcode version as CI and
-builds the root package explicitly for ARM64, using the checksum-pinned
+It also supports manual dispatch. Swift analysis remains on the compatibility
+toolchain, Xcode 26.2 / Swift 6.2, until
+[CodeQL supports Swift 6.4](https://codeql.github.com/docs/codeql-overview/supported-languages-and-frameworks/).
+It builds the root package explicitly for ARM64, using the checksum-pinned
 published bridge and a fresh build directory. This avoids autobuild discovering
 the standalone example and the environment-dependent memory probe package.
 Use `swift build --arch arm64` to select the target without wrapping the compiler
@@ -162,6 +171,12 @@ current host.
 
 The ignored output is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`.
+
+Release build dependencies (proc macros and build scripts) are not stripped.
+The pinned Rust compiler can otherwise produce a misaligned Mach-O string table
+that macOS 27 refuses to load, reported by Rust as a missing proc-macro crate
+([rust-lang/rust#157750](https://github.com/rust-lang/rust/issues/157750)). This
+build-only override preserves the bridge's release optimization and stripping.
 
 ### GNU/Linux
 
