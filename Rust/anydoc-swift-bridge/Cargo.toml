@@ -52,3 +52,9 @@ lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
 panic = "unwind"
+
+# Rust 1.94.1's stripping can misalign proc-macro dylibs, which macOS 27 rejects.
+# Keep host build tools loadable; the bridge retains the release settings above.
+# https://github.com/rust-lang/rust/issues/157750
+[profile.release.build-override]
+strip = "none"

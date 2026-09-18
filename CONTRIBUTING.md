@@ -172,6 +172,12 @@ current host.
 The ignored output is
 `.build/artifacts/AnyDocSwiftBridge.xcframework.zip`.
 
+Release build dependencies (proc macros and build scripts) are not stripped.
+The pinned Rust compiler can otherwise produce a misaligned Mach-O string table
+that macOS 27 refuses to load, reported by Rust as a missing proc-macro crate
+([rust-lang/rust#157750](https://github.com/rust-lang/rust/issues/157750)). This
+build-only override preserves the bridge's release optimization and stripping.
+
 ### GNU/Linux
 
 `just artifact-linux-container` builds the pinned container environment and
