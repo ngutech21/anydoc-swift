@@ -40,7 +40,9 @@ anydoc (pinned upstream engine)
 Applications consume a checksum-pinned native artifact through SwiftPM and do
 not need Cargo or an external process. Contributors rebuild the native artifact
 from the locked Rust graph and run the Swift package against that verified
-local artifact. Conversion itself is local and makes no network requests.
+local artifact. Conversion is local by default. An explicitly selected hosted
+OCR policy permits a Swift-owned HTTP fallback only after a structured
+OCR-required failure.
 
 ## Repository map
 
@@ -48,6 +50,7 @@ local artifact. Conversion itself is local and makes no network requests.
 | --- | --- |
 | [`Package.swift`](../Package.swift) | Declares the public Swift library, private bridge dependency, and host selection. |
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Owns the public actor, format/error/document types, private decoder, and private C adapter. |
+| [`Sources/AnyDocSwift/HostedOCRAdapter.swift`](../Sources/AnyDocSwift/HostedOCRAdapter.swift) | Owns hosted configuration, multipart requests, Fetch redirects, deadlines, and private response/error handling. |
 | [`Native/include/`](../Native/include/) | Defines the portable C ABI. |
 | [`Native/framework/`](../Native/framework/) | Defines the macOS framework metadata and exact export list. |
 | [`Native/linux/`](../Native/linux/) | Defines Linux artifact metadata, native linker requirements, and exact export list. |
@@ -106,7 +109,8 @@ The actor owns application-facing policy:
 
 - enforcing the input limit before native work begins;
 - moving synchronous native calls off the caller's executor;
-- putting Markdown and document requests through one FIFO queue per converter;
+- reserving one FIFO slot per complete Markdown/document operation, including
+  hosted processing and cleanup;
 - allowing separate converters to execute independently; and
 - presenting queued/active cancellation with Swift's `CancellationError`.
 
@@ -211,9 +215,12 @@ error.
 
 ## Runtime paths
 
-Both operations check cancellation and input size, enqueue one typed closure,
-invoke anydoc synchronously, copy/validate the selected result, release the
-native owner, then check cancellation again.
+Both operations check cancellation and input size, acquire a FIFO slot, enqueue
+one typed native closure, invoke anydoc synchronously, copy/validate the selected
+result, release the native owner, then check cancellation again. The slot is
+released on every exit path. Cancelled waiters are removed without waiting for
+the active operation to finish. Transfer to the next waiter happens before its
+continuation resumes, preventing actor reentrancy from admitting a later call.
 
 Markdown conversion enforces `maximumOutputBytes` and validates UTF-8. Document
 conversion enforces `maximumDocumentBytes` over manifest plus asset buffers in
@@ -224,6 +231,62 @@ Native parsing cannot be interrupted. Cancellation can prevent queued work from
 starting; once parsing is active, conversion and cleanup finish before
 `CancellationError` is delivered. Cancellation observed after native work takes
 precedence over both a successful result and a conversion error.
+
+## Hosted OCR
+
+`OCRPolicy.reject` and the original Markdown overload remain local-only.
+`.hosted(apiKey:apiURL:)` authorizes fallback only when local conversion returns
+the typed `.needsOCR` error. Both automatic PDF detection and an explicit PDF
+format take that path. Other errors and local successes never consult hosted
+configuration. Document-model parsing has no hosted fallback.
+
+The public contract follows the Node.js and Python wrappers at the **same
+revision as the pinned anydoc engine**, with **Node.js as the tie-breaker**:
+[Node.js](https://github.com/firecrawl/anydoc/blob/42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c/node/anydoc.js)
+and [Python](https://github.com/firecrawl/anydoc/blob/42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c/python/anydoc/__init__.py).
+This does not promise identical behavior between HTTP runtimes. Swift retains
+its input/output limits, full-operation FIFO ordering, cancellation precedence,
+and typed errors without provider text. Hosted support stays entirely in Swift
+and uses the existing native OCR metadata, with no Rust or C ABI change.
+
+At fallback time, resolve explicit key/URL values before `FIRECRAWL_API_KEY` and
+`FIRECRAWL_API_URL`. A missing key means keyless; a missing URL defaults to
+`https://api.firecrawl.dev`. Only `nil` selects the next fallback. An empty key
+suppresses environment credentials; an empty URL fails as invalid configuration.
+Remove at most one trailing slash, then append `/v2/parse`. Reject invalid
+HTTP(S) URLs, embedded URL credentials, or invalid authorization header values.
+Environment variables never select hosted mode by themselves.
+
+The multipart POST contains `options` followed by `file`: the complete original
+PDF, named `document.pdf`, with `application/pdf`. Options are
+`{"parsers":[{"type":"pdf","mode":"auto"}],"origin":"anydoc@0.2.4"}`.
+Send `Authorization: Bearer …` only for a nonempty resolved key. Custom endpoints
+receive the same payload. There is no additional upload-size cap or application
+retry, and a rejected key is never retried anonymously.
+
+The private adapter uses ephemeral URLSession, including FoundationNetworking
+on Linux, with cookies, caches, and credential storage disabled. Each request
+has one 300-second overall deadline covering redirects and body reading.
+Redirects are explicit because URLSession defaults differ from Fetch: at most
+20, POST becomes GET for 301/302/303, 307/308 preserve the body, and a change of
+scheme/host/effective port removes authorization permanently for that chain.
+The native serial worker runs only native parsing; hosted HTTP suspends
+asynchronously while the converter retains its FIFO slot. Structured task
+cancellation cancels HTTP and deadline work and waits for their cleanup.
+
+Accept any successful 2xx response with a JavaScript-truthy `success` value and
+a nonempty string `data.markdown`. Append one newline only if absent and check
+the final UTF-8 byte count against `maximumOutputBytes`. This deliberately uses
+Node's 2xx check, nullish overrides, and one-slash removal where Python differs.
+Provider responses and underlying transport descriptions never escape in an
+error; see [errors](errors.md).
+
+Internal transport, environment, deadline, and queue-admission seams support
+deterministic public-converter tests. Real PDF fixtures exercise native fallback;
+offline response scripts exercise wrapper conformance. Cancellation and FIFO
+tests use explicit events/continuations, including a URLProtocol test proving
+cancellation reaches the production URLSession task. No test contacts an OCR
+service or mutates process environment variables.
 
 ## Application-visible limits and errors
 
@@ -275,7 +338,8 @@ lockfile, and the publishing sequence lives in [the release guide](releasing.md)
 ## Ownership boundaries and invariants
 
 - Public types, filename-extension alias lookup, FIFO scheduling, limits, and
-  cancellation belong to Swift.
+  cancellation belong to Swift. Hosted consent, configuration, HTTP handling,
+  and response/error policy also belong to Swift.
 - Unsafe borrowing, native-result validation, and exactly-once freeing belong
   to the private Swift adapter and handwritten C ABI.
 - Byte detection, parser selection from an optional canonical format, and

@@ -10,10 +10,12 @@
 AnyDocSwift converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
 and CSV data to GitHub-Flavored Markdown in Swift applications.
 
-Conversion runs locally and in-process through the Rust
+Conversion runs locally by default and in-process through the Rust
 [Firecrawl anydoc](https://github.com/firecrawl/anydoc) engine. Applications
 install the package through SwiftPM and do not need Rust, Cargo, or an external
 service.
+The candidate checkout also supports explicitly opted-in hosted OCR for PDFs
+that need it; this API is pending release and is not available in `0.2.0`.
 This independent community project is not affiliated with, endorsed by, or maintained by Firecrawl.
 
 ## Requirements
@@ -178,9 +180,13 @@ before loading the complete contents into `Data`.
 Markdown and document operations share one FIFO queue per converter. Separate
 converter instances may convert concurrently without blocking the main actor.
 
-Cancellation before native work starts skips the call. An active native parser
+The FIFO slot includes hosted requests and their cleanup. HTTP suspends
+asynchronously, leaving the native serial worker free. Cancellation before
+native work starts skips the call. An active native parser
 call cannot be interrupted; conversion and cleanup finish before the awaiting
-task receives `CancellationError`.
+task receives `CancellationError`. Cancellation prevents an unstarted hosted
+request and cancels an active HTTP task. Cancellation observed before returning
+takes precedence over success or another failure.
 
 ### Errors
 
@@ -190,6 +196,8 @@ OCR-required, malformed, encrypted, missing, resource-limited, and I/O cases.
 Unknown future engine codes remain observable through
 `unrecognizedUpstream(code:message:)`. Corrupt bridge transport becomes
 `bridgeFailure`; task cancellation uses Swift's `CancellationError`.
+The pending hosted API adds `.hostedOCR(HostedOCRFailure)` with fixed,
+privacy-safe descriptions; see the [error reference](docs/errors.md).
 
 ### PDFs
 
@@ -202,9 +210,62 @@ anydoc 0.2.4 intentionally has no structured document-model representation for
 PDF. `document(from:format:)` therefore rejects `.pdf`; the package does not
 synthesize a lossy graph.
 
+### Hosted OCR (pending release)
+
+The existing `markdown(from:format:)` overload remains local-only. Explicitly
+select `.hosted` to allow fallback after a structured `.needsOCR` failure:
+
+```swift
+// Application consent must cover uploading the entire PDF to the chosen service.
+let markdown = try await converter.markdown(from: pdf, ocr: .hosted())
+
+// Credentials belong to the application, not the library.
+let authenticated = try await converter.markdown(
+  from: pdf, format: .pdf, ocr: .hosted(apiKey: apiKey)
+)
+```
+
+Local success returns immediately. Other local errors never trigger an upload.
+When fallback begins, the complete original PDF is transmitted, including pages
+that already contain text. Environment variables alone never enable uploads.
+Use the original overload or `.reject` to preserve local-only behavior and
+the OCR-required page metadata.
+
+Configuration follows the Node.js wrapper at the pinned anydoc revision:
+
+| Setting | Resolution, in order |
+| --- | --- |
+| API key | Explicit `apiKey`, `FIRECRAWL_API_KEY`, then keyless |
+| Base URL | Explicit `apiURL`, `FIRECRAWL_API_URL`, then `https://api.firecrawl.dev` |
+
+Only `nil` falls through. `apiKey: ""` suppresses environment credentials and
+omits authorization. `apiURL: ""` is invalid configuration. At most one trailing
+slash is removed before appending `/v2/parse`. For example,
+`.hosted(apiURL: "https://ocr.example.com")` uses
+`https://ocr.example.com/v2/parse`. A custom URL changes the recipient of the
+entire document, so applications must include that destination in upload consent.
+The endpoint must implement the upstream multipart parse API.
+
+Keyless use follows the service's limits; HTTP 429 distinguishes keyless quota
+exhaustion from authenticated rate limiting. Provider upload/credit limits may
+vary by endpoint. AnyDocSwift retains its configured input/output limits and
+adds no separate 50 MiB upload cap. It makes no application retries or retries
+without credentials. A 300-second deadline covers the request, redirects, and
+response reading. Redirects follow Node Fetch semantics, with authorization
+removed across origins.
+
+Store credentials in application-owned configuration or a suitable credential
+store; do not embed secrets in distributed applications. Policies and hosted
+errors redact sensitive details. Sandboxed macOS applications using hosted OCR
+need the outgoing network entitlement `com.apple.security.network.client`.
+
+See the [candidate hosted example](Examples/HostedOCR/README.md) for buildable
+code. The [architecture guide](docs/architecture.md#hosted-ocr) describes the
+pinned wrapper contract, Node.js tie-breaker, and deliberate Swift guarantees.
+
 ### Other limitations
 
-The package does not provide OCR, streaming output, progress reporting,
+The package does not provide local OCR, streaming output, progress reporting,
 active-parser interruption, file-path or security-scoped URL handling,
 persistence, mutation/builders, or custom rendering.
 

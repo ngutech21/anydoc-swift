@@ -3,7 +3,7 @@ public import Foundation
 
 /// Converts supported document bytes to Markdown or a structured document.
 ///
-/// Each converter performs native work in FIFO order on its own serial queue.
+/// Each converter performs complete operations, including hosted OCR, in FIFO order.
 /// Separate converter instances may convert concurrently. Cancellation before
 /// native work starts skips the native call. Once native work starts it cannot
 /// be interrupted; the native result is released before cancellation is
@@ -38,6 +38,10 @@ public actor AnyDocConverter {
   private let limits: Limits
   private let adapter: AnyDocCAdapter
   private let enqueue: Enqueue
+  private let hostedOCR: HostedOCRAdapter
+  private let onQueued: @Sendable () -> Void
+  private var active = false
+  private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
 
   public init(limits: Limits = .standard) {
     let queue = DispatchQueue(
@@ -45,15 +49,25 @@ public actor AnyDocConverter {
     )
     self.limits = limits
     self.adapter = .live
+    self.hostedOCR = HostedOCRAdapter()
+    self.onQueued = {}
     self.enqueue = { operation in
       queue.async(execute: operation)
     }
   }
 
-  init(limits: Limits = .standard, adapter: AnyDocCAdapter, enqueue: @escaping Enqueue) {
+  init(
+    limits: Limits = .standard,
+    adapter: AnyDocCAdapter,
+    enqueue: @escaping Enqueue,
+    hostedOCR: HostedOCRAdapter = HostedOCRAdapter(),
+    onQueued: @escaping @Sendable () -> Void = {}
+  ) {
     self.limits = limits
     self.adapter = adapter
     self.enqueue = enqueue
+    self.hostedOCR = hostedOCR
+    self.onQueued = onQueued
   }
 
   /// The embedded anydoc version, originating revision, and bridge ABI version.
@@ -76,8 +90,33 @@ public actor AnyDocConverter {
     from data: Data,
     format: AnyDocFormat? = nil
   ) async throws -> String {
-    try await perform(data: data) { adapter, limits in
-      try adapter.markdown(from: data, format: format, limits: limits)
+    try await markdown(from: data, format: format, ocr: .reject)
+  }
+
+  /// Converts locally first, optionally uploading an OCR-required PDF in full.
+  ///
+  /// Hosted configuration is resolved only after a structured OCR-required error.
+  /// Successful local conversions and other native failures never make a request.
+  public func markdown(
+    from data: Data,
+    format: AnyDocFormat? = nil,
+    ocr: OCRPolicy
+  ) async throws -> String {
+    try await perform(data: data) { converter in
+      do {
+        return try await converter.performNative { adapter, limits in
+          try adapter.markdown(from: data, format: format, limits: limits)
+        }
+      } catch let error as AnyDocConversionError {
+        guard case .needsOCR = error, case .hosted(let apiKey, let apiURL) = ocr else {
+          throw error
+        }
+        try Task.checkCancellation()
+        return try await converter.hostedOCR.markdown(
+          from: data, apiKey: apiKey, apiURL: apiURL,
+          maximumOutputBytes: converter.limits.maximumOutputBytes
+        )
+      }
     }
   }
 
@@ -90,14 +129,16 @@ public actor AnyDocConverter {
     from data: Data,
     format: AnyDocFormat? = nil
   ) async throws -> AnyDocDocument {
-    try await perform(data: data) { adapter, limits in
-      try adapter.document(from: data, format: format, limits: limits)
+    try await perform(data: data) { converter in
+      try await converter.performNative { adapter, limits in
+        try adapter.document(from: data, format: format, limits: limits)
+      }
     }
   }
 
   private func perform<Output: Sendable>(
     data: Data,
-    operation: @escaping @Sendable (AnyDocCAdapter, Limits) throws -> Output
+    operation: @Sendable (isolated AnyDocConverter) async throws -> Output
   ) async throws -> Output {
     try Task.checkCancellation()
 
@@ -109,6 +150,55 @@ public actor AnyDocConverter {
       )
     }
     try Task.checkCancellation()
+
+    try await acquireTurn()
+    defer { releaseTurn() }
+    do {
+      try Task.checkCancellation()
+      let output = try await operation(self)
+      try Task.checkCancellation()
+      return output
+    } catch {
+      try Task.checkCancellation()
+      throw error
+    }
+  }
+
+  private func acquireTurn() async throws {
+    if !active {
+      active = true
+      onQueued()
+      return
+    }
+    let id = UUID()
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        waiting.append((id, continuation))
+        onQueued()
+      }
+    } onCancel: {
+      Task { await self.cancelWaiting(id) }
+    }
+  }
+
+  private func cancelWaiting(_ id: UUID) {
+    guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
+    waiting.remove(at: index).continuation.resume(throwing: CancellationError())
+  }
+
+  private func releaseTurn() {
+    if waiting.isEmpty {
+      active = false
+    } else {
+      // Transfer the slot before resuming: actor reentrancy must not admit a
+      // newer request while the selected waiter is waiting for its executor.
+      waiting.removeFirst().continuation.resume()
+    }
+  }
+
+  private func performNative<Output: Sendable>(
+    operation: @escaping @Sendable (AnyDocCAdapter, Limits) throws -> Output
+  ) async throws -> Output {
 
     let cancellation = CancellationState()
     let adapter = self.adapter

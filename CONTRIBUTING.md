@@ -116,6 +116,12 @@ Tests are organized around the seams they protect:
 - Public actor tests cover both result modes, shared input checks, mixed FIFO
   execution, independent concurrency, main-actor responsiveness, and queued or
   active cancellation.
+- Hosted conformance tests exercise the public converter with offline transport
+  and environment fakes, including real PDF fallback, multipart bytes, redirects,
+  authentication, response semantics, limits, and fixed errors. Controlled events
+  cover cancellation, deadlines, and FIFO admission; URLProtocol verifies the
+  production URLSession task is cancelled. Never contact a live OCR service or
+  mutate process environment variables in individual tests.
 - Public format tests cover all pinned extension aliases, ASCII case matching,
   rejected inputs, unchanged raw values, and real conversions using lookup
   results in both output modes. Keep this table aligned with the pinned
@@ -244,6 +250,13 @@ intentional upgrade unit.
 - An anydoc upgrade must update the exact Cargo dependency, lockfile, embedded
   version and revision, fixture expectations, generated third-party notices,
   and released platform artifacts intentionally.
+- At each new pinned anydoc revision, inspect **both** `node/anydoc.js` and the
+  Python wrapper at that revision, not their latest branches. Compare hosted
+  options and origin/package version, nil/empty and environment resolution,
+  multipart requests, redirects/deadlines, response checks, and error behavior.
+  Use Node.js when wrappers differ. Update `HostedOCRAdapter`, the public
+  conformance cases, and affected documentation together; preserve the deliberate
+  Swift limits, FIFO/cancellation, and privacy guarantees.
 - Linker settings must come from Cargo's report for the built artifact rather
   than assumptions about a developer machine. Any report change must update
   the verifier and manifest as one reviewed change.
