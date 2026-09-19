@@ -56,6 +56,13 @@ let useLocallyBuiltBridge =
   )
 #endif
 
+let swiftSettings: [SwiftSetting] = [
+  .treatAllWarnings(as: .error),
+  .enableUpcomingFeature("ExistentialAny"),
+  .enableUpcomingFeature("InternalImportsByDefault"),
+  .enableUpcomingFeature("MemberImportVisibility"),
+]
+
 let package = Package(
   name: "AnyDocSwift",
   platforms: [
@@ -71,12 +78,14 @@ let package = Package(
     .target(
       name: "AnyDocSwift",
       dependencies: ["AnyDocSwiftBridge"],
+      swiftSettings: swiftSettings,
       linkerSettings: bridgeLinkerSettings
     ),
     bridgeTarget,
     .testTarget(
       name: "AnyDocSwiftTests",
-      dependencies: ["AnyDocSwift"]
+      dependencies: ["AnyDocSwift"],
+      swiftSettings: swiftSettings
     ),
   ]
 )

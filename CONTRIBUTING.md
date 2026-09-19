@@ -40,6 +40,11 @@ package consumers are verified with both toolchains. Keep
 using a newer CI compiler does not raise the consumer minimum. Linux retains
 its Swift 6.2.4 / glibc 2.26 build and verification baseline.
 
+The root library and test targets treat compiler warnings as errors and enable
+`ExistentialAny`, `InternalImportsByDefault`, and `MemberImportVisibility`.
+Use explicit `any` existential types and mark imports used by the public API
+as `public`; keep native bridge imports `internal`.
+
 ## Build and test
 
 Run commands from the repository root unless a command says otherwise:
