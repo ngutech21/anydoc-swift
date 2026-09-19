@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "rules": {
+    "NeverForceUnwrap": true,
+    "NeverUseForceTry": true,
+    "NeverUseImplicitlyUnwrappedOptionals": true,
+    "ValidateDocumentationComments": true
+  }
+}
