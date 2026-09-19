@@ -81,10 +81,23 @@ let fromCsv = try await converter.markdown(from: csvBytes, format: .csv)
 
 // Or stop at the document model, which also carries embedded assets:
 let document = try await converter.document(from: bytes)
+
+// Opt in to hosted OCR when local PDF parsing requires it.
+// Obtain user consent to upload the entire PDF to the chosen service first.
+let pdf = try Data(contentsOf: URL(fileURLWithPath: "scanned.pdf"))
+let fromScannedPdf = try await converter.markdown(
+  from: pdf, format: .pdf, ocr: .hosted()
+)
 ```
 
-For a complete command-line example, see
-[`Examples/AnyDocSwiftExample`](Examples/AnyDocSwiftExample).
+Hosted OCR uses the Firecrawl Parse API by default. `.hosted()` reads optional
+`FIRECRAWL_API_KEY` and `FIRECRAWL_API_URL` environment variables; use
+`.hosted(apiKey:apiURL:)` to supply credentials and an endpoint explicitly.
+See [Hosted OCR](#hosted-ocr) for configuration and fallback behavior.
+
+For complete command-line examples, see
+[`Examples/AnyDocSwiftExample`](Examples/AnyDocSwiftExample) and
+[`Examples/HostedOCR`](Examples/HostedOCR/README.md).
 
 ## Supported formats
 
