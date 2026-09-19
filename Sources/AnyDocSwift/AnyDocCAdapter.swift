@@ -7,11 +7,11 @@ import Foundation
 /// `invoke`, and the immediate copy helpers. Input buffers remain alive for
 /// each synchronous native call. Result buffers are copied while their opaque
 /// owner is live, and that owner is released exactly once on every exit path.
-struct AnyDocCAdapter: @unchecked Sendable {
+struct AnyDocCAdapter: Sendable {
   static let expectedABIVersion: UInt32 = 3
   static let live = AnyDocCAdapter(functions: .live)
 
-  struct Functions: @unchecked Sendable {
+  struct Functions: Sendable {
     typealias EngineVersion =
       @Sendable (
         UnsafeMutablePointer<Int>?

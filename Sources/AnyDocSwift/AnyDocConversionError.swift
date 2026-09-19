@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A typed failure produced while converting document bytes.
 public enum AnyDocConversionError: Error, Sendable, Equatable, LocalizedError {

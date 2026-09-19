@@ -1,5 +1,5 @@
 import Dispatch
-import Foundation
+public import Foundation
 
 /// Converts supported document bytes to Markdown or a structured document.
 ///

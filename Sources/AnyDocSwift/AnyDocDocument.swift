@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// An information-preserving, self-contained document parsed by anydoc.
 ///

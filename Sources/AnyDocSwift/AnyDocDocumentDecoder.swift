@@ -121,7 +121,7 @@ private enum WireBlock: Decodable {
     case value
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     switch try container.decode(String.self, forKey: .kind) {
     case "heading":
@@ -205,7 +205,7 @@ private enum WireInline: Decodable {
     case value
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     switch try container.decode(String.self, forKey: .kind) {
     case "text":
@@ -296,7 +296,7 @@ private enum WireLinkTarget: Decodable {
     case value
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let value = try container.decode(String.self, forKey: .value)
     switch try container.decode(String.self, forKey: .kind) {
@@ -336,7 +336,7 @@ private enum WireImageSource: Decodable {
     case value
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     switch try container.decode(String.self, forKey: .kind) {
     case "external":
@@ -452,7 +452,7 @@ private enum WireCellSlot: Decodable {
     case value
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     switch try container.decode(String.self, forKey: .kind) {
     case "origin":
