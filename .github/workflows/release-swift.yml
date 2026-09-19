@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Semantic version without a leading v (for example, 0.2.0)
+        description: Semantic version without a leading v (for example, 0.2.2)
         required: true
         type: string
 

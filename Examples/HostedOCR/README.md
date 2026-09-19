@@ -1,9 +1,8 @@
-# Hosted OCR example — pending release
+# Hosted OCR example
 
-This example compiles against the candidate checkout. Hosted OCR is not in the
-released `0.2.0` Swift API. The existing
-[`AnyDocSwiftExample`](../AnyDocSwiftExample) remains a local-only consumer pinned
-to that released version.
+This example uses hosted OCR from the released AnyDocSwift `0.2.2` package.
+Both this example and the local-only
+[`AnyDocSwiftExample`](../AnyDocSwiftExample) are pinned to that released version.
 
 From the repository root:
 
@@ -28,7 +27,3 @@ Applications can pass `.hosted(apiKey:apiURL:)` directly. Only `nil` falls throu
 to the environment; an empty key suppresses authorization and an empty URL is an
 error. Credentials are application-owned. Sandboxed macOS applications need
 `com.apple.security.network.client` for outgoing requests.
-
-After the Swift API is published, update this example's dependency to the exact
-published version and resolve its lockfile. Do not change the released-version
-example's pin before publication. Native artifact pins remain unchanged.

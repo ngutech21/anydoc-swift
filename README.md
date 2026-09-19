@@ -14,8 +14,9 @@ Conversion runs locally by default and in-process through the Rust
 [Firecrawl anydoc](https://github.com/firecrawl/anydoc) engine. Applications
 install the package through SwiftPM and do not need Rust, Cargo, or an external
 service.
-The candidate checkout also supports explicitly opted-in hosted OCR for PDFs
-that need it; this API is pending release and is not available in `0.2.0`.
+AnyDocSwift 0.2.2 also supports explicitly opted-in hosted OCR through the
+Firecrawl Parse API for PDFs that need it; see [Hosted OCR](#hosted-ocr).
+
 This independent community project is not affiliated with, endorsed by, or maintained by Firecrawl.
 
 ## Requirements
@@ -41,7 +42,7 @@ let package = Package(
   dependencies: [
     .package(
       url: "https://github.com/ngutech21/anydoc-swift.git",
-      exact: "0.2.0"
+      exact: "0.2.2"
     )
   ],
   targets: [
@@ -105,9 +106,11 @@ Use these `AnyDocFormat` cases to select a document format explicitly:
 | `.csv` | CSV | `csv` |
 
 > [!IMPORTANT]
-> **PDF supports Markdown output only.** OCR and structured PDF output are not
-> supported. If any page requires OCR, conversion fails without returning
-> partial Markdown. See [PDF behavior](#pdfs) for error details.
+> **PDF supports Markdown output only.** Local OCR and structured PDF output
+> are not supported. By default, if any page requires OCR, conversion fails
+> without returning partial Markdown. Explicitly opt in to [Hosted OCR](#hosted-ocr)
+> to enable fallback through the Firecrawl Parse API. See [PDF behavior](#pdfs)
+> for error details.
 
 ## Behavior and limitations
 
@@ -196,23 +199,25 @@ OCR-required, malformed, encrypted, missing, resource-limited, and I/O cases.
 Unknown future engine codes remain observable through
 `unrecognizedUpstream(code:message:)`. Corrupt bridge transport becomes
 `bridgeFailure`; task cancellation uses Swift's `CancellationError`.
-The pending hosted API adds `.hostedOCR(HostedOCRFailure)` with fixed,
+Hosted OCR failures use `.hostedOCR(HostedOCRFailure)` with fixed,
 privacy-safe descriptions; see the [error reference](docs/errors.md).
 
 ### PDFs
 
-Text-based PDFs can be converted to Markdown. An image-only, scanned, or mixed
-PDF with any page requiring OCR fails with
+Text-based PDFs can be converted to Markdown locally. By default, an image-only,
+scanned, or mixed PDF with any page requiring OCR fails with
 `AnyDocConversionError.needsOCR(pages:pageCount:)`; no partial Markdown is
 returned. Page numbers are sorted, unique, and one-based.
+Explicitly select [Hosted OCR](#hosted-ocr) to allow fallback for these PDFs.
 
 anydoc 0.2.4 intentionally has no structured document-model representation for
 PDF. `document(from:format:)` therefore rejects `.pdf`; the package does not
 synthesize a lossy graph.
 
-### Hosted OCR (pending release)
+### Hosted OCR
 
-The existing `markdown(from:format:)` overload remains local-only. Explicitly
+Hosted OCR is available in the released AnyDocSwift 0.2.2 package. The
+`markdown(from:format:)` overload remains local-only. Explicitly
 select `.hosted` to allow fallback after a structured `.needsOCR` failure:
 
 ```swift
@@ -259,7 +264,7 @@ store; do not embed secrets in distributed applications. Policies and hosted
 errors redact sensitive details. Sandboxed macOS applications using hosted OCR
 need the outgoing network entitlement `com.apple.security.network.client`.
 
-See the [candidate hosted example](Examples/HostedOCR/README.md) for buildable
+See the [hosted OCR example](Examples/HostedOCR/README.md) for buildable
 code. The [architecture guide](docs/architecture.md#hosted-ocr) describes the
 pinned wrapper contract, Node.js tie-breaker, and deliberate Swift guarantees.
 
@@ -271,13 +276,13 @@ persistence, mutation/builders, or custom rendering.
 
 ### Native artifacts
 
-AnyDocSwift 0.2.0 embeds **anydoc 0.2.4** with bridge ABI v3. Its manifest pins
+AnyDocSwift 0.2.2 embeds **anydoc 0.2.4** with bridge ABI v3. Its manifest pins
 the immutable
 [`binary-0.2.0`](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.0)
 artifacts for macOS arm64 and GNU/Linux x86_64 and aarch64. SwiftPM verifies
 the downloaded artifact against its pinned checksum.
 
-Swift package and native binary tags are separate: use `0.2.0` as the package
+Swift package and native binary tags are separate: use `0.2.2` as the package
 version; `binary-0.2.0` identifies its native artifact release.
 
 ## Architecture and contributing

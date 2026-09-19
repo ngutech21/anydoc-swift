@@ -7,7 +7,7 @@ Local errors and OCR page metadata retain their existing behavior. The
 `.needsOCR(pages:pageCount:)` with sorted, unique, one-based page numbers and
 no partial Markdown.
 
-The pending hosted OCR API adds `.hostedOCR(HostedOCRFailure)`:
+Hosted OCR failures use `.hostedOCR(HostedOCRFailure)`:
 
 | Failure | Meaning |
 | --- | --- |
