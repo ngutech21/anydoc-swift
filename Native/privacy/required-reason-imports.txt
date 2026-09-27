@@ -1,4 +1,4 @@
-# Apple required-reason API imports checked on 2026-08-30.
+# Apple required-reason API imports checked on 2026-09-27.
 # Source: https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype
 #
 # File timestamp APIs

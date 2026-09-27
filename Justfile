@@ -40,6 +40,7 @@ update-licenses:
 
 # Verify that the committed third-party notices match the locked release graph.
 check-licenses:
+    cd "{{ root }}/Native/licenses" && if [[ "$(uname -s)" = "Darwin" ]]; then shasum -a 256 -c SHA256SUMS; else sha256sum -c SHA256SUMS; fi
     mkdir -p "{{ license_build_root }}"
     rm -f "{{ generated_notices }}" "{{ license_metadata }}"
     just _generate-licenses "{{ generated_notices }}" "{{ license_metadata }}"
@@ -56,6 +57,12 @@ _generate-licenses output metadata:
 
 # Check the Linux artifact implementation without executing it.
 lint-shell:
+    bash -n "{{ root }}/Scripts/build-ios-bridge.sh"
+    shellcheck "{{ root }}/Scripts/build-ios-bridge.sh"
+    bash -n "{{ root }}/Scripts/test-ios-rust-runtime.sh"
+    shellcheck "{{ root }}/Scripts/test-ios-rust-runtime.sh"
+    bash -n "{{ root }}/Scripts/verify-artifact.sh" "{{ root }}/Scripts/verify-xcode-package.sh" "{{ root }}/Scripts/test-ios-simulator.sh"
+    shellcheck "{{ root }}/Scripts/verify-artifact.sh" "{{ root }}/Scripts/verify-xcode-package.sh" "{{ root }}/Scripts/test-ios-simulator.sh"
     bash -n "{{ linux_artifact_script }}"
     shellcheck "{{ linux_artifact_script }}"
     bash -n "{{ public_interface_script }}"
@@ -103,6 +110,10 @@ verify-xcode-package: build-artifact-macos verify-artifact-macos
 test-ios-simulator: build-artifact-macos verify-artifact-macos
     bash "{{ root }}/Scripts/test-ios-simulator.sh"
 
+# Execute panic containment and bridge regressions with the iOS std features.
+test-ios-rust-runtime:
+    bash "{{ root }}/Scripts/test-ios-rust-runtime.sh"
+
 # Fail when an iOS binary imports an API on the checked required-reason list.
 audit-required-reason-apis: build-artifact-macos verify-artifact-macos
     bash "{{ root }}/Scripts/audit-required-reason-apis.sh"
@@ -115,7 +126,7 @@ verify-release-artifact archive=artifact_archive:
     bash "{{ root }}/Scripts/audit-required-reason-apis.sh"
 
 # Build, package, process, execute, and audit the Apple native release artifact.
-artifact-macos: build-artifact-macos verify-artifact-macos verify-xcode-package test-ios-simulator audit-required-reason-apis
+artifact-macos: build-artifact-macos verify-artifact-macos test-ios-rust-runtime verify-xcode-package test-ios-simulator audit-required-reason-apis
 
 # Verify the checksum-pinned remote Apple binary with Cargo unavailable.
 verify-published-package:
@@ -204,7 +215,7 @@ ci-swift:
     if [[ "$(uname -s)" = "Darwin" ]]; then just ci-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just ci-swift-linux-container; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
 
 # Run every macOS Swift check used by continuous integration.
-ci-swift-macos: lint-swift build-swift-macos test-swift-macos check-public-interface-macos verify-xcode-package test-ios-simulator audit-required-reason-apis
+ci-swift-macos: lint-swift build-swift-macos test-swift-macos test-ios-rust-runtime check-public-interface-macos verify-xcode-package test-ios-simulator audit-required-reason-apis
 
 # Run all continuous-integration checks locally.
 ci:

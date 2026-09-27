@@ -32,6 +32,7 @@ test -f "$modulemap"
 test -f "$exports"
 test -f "$license"
 test -f "$notices"
+(cd "$root/Native/licenses" && shasum -a 256 -c SHA256SUMS)
 
 rm -rf "$frameworks_root" "$xcframework" "$archive"
 mkdir -p "$cargo_target" "$frameworks_root" "$(dirname "$archive")"
@@ -43,7 +44,12 @@ build_static_library() {
   local minimum_version="$4"
   local log="$build_root/native-static-libs-$target.log"
   local sdk_path
+  local -a build_command
   sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+  build_command=(cargo rustc --release --offline --locked --target "$target" -- --print=native-static-libs)
+  if [[ "$target" != "aarch64-apple-darwin" ]]; then
+    build_command=(bash "$root/Scripts/build-ios-bridge.sh" "$target")
+  fi
 
   (
     cd "$crate"
@@ -51,8 +57,7 @@ build_static_library() {
       "$deployment_variable=$minimum_version" \
       SDKROOT="$sdk_path" \
       CARGO_TARGET_DIR="$cargo_target" \
-      cargo rustc --release --offline --locked --target "$target" -- \
-        --print=native-static-libs
+      "${build_command[@]}"
   ) 2>&1 | tee "$log"
 
   test -f "$cargo_target/$target/release/libanydoc_swift_bridge.a"
@@ -97,6 +102,7 @@ create_macos_framework() {
   cp "$root/Native/framework/Info.plist" "$version_root/Resources/Info.plist"
   cp "$license" "$version_root/Resources/LICENSE.txt"
   cp "$notices" "$version_root/Resources/ThirdPartyNotices.txt"
+  cp "$root"/Native/licenses/Rust*Notices.* "$version_root/Resources/"
 
   link_framework_binary \
     "aarch64-apple-darwin" \
@@ -127,6 +133,7 @@ create_ios_framework() {
   cp "$info_plist" "$framework/Info.plist"
   cp "$license" "$framework/LICENSE.txt"
   cp "$notices" "$framework/ThirdPartyNotices.txt"
+  cp "$root"/Native/licenses/Rust*Notices.* "$framework/"
 
   link_framework_binary "$target" "$sdk" "$clang_target" "$flat_install_name" \
     "$framework/$framework_name"

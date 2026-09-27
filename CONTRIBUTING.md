@@ -159,6 +159,8 @@ Tests are organized around the seams they protect:
 
 Tests themselves do not access the network. A clean Cargo build may need
 network access once to resolve the locked crates.io dependency graph.
+The iOS producer also fetches the pinned Rust standard-library dependencies
+before compiling them offline.
 
 ## Native artifacts
 
@@ -172,6 +174,14 @@ current host.
 1. Build separate Rust `staticlib` intermediates for `aarch64-apple-darwin`,
    `aarch64-apple-ios`, and `aarch64-apple-ios-sim` with the pinned toolchain,
    macOS 13 and iOS 17 deployment targets.
+   The iOS builds use [`build-ios-bridge.sh`](Scripts/build-ios-bridge.sh):
+   it stages a checksum-verified, iOS-only CMap override patch and rebuilds
+   Rust's standard library with `panic-unwind` and without backtraces.
+   This deliberately uses experimental Cargo `build-std` with
+   `RUSTC_BOOTSTRAP=1`, scoped to the producer command. Rust 1.94.1, its
+   `rust-src` component, and the standard-library lockfile checksum are pinned.
+   Do not remove these constraints or change standard-library features without
+   repeating the [privacy audit](docs/ios-required-reason-audit.md).
 2. Verify the committed notices against the union of the three target-filtered
    locked Cargo graphs.
 3. Use each target's Cargo-reported native link requirements to link a versioned
@@ -179,6 +189,7 @@ current host.
    non-mergeable, has a controlled `@rpath` install name, and exports exactly
    the 12 ABI-v3 C symbols.
 4. Copy the project license and third-party notices into each framework,
+   including the verbatim [Rust runtime notices](Native/licenses/README.md),
    preserve macOS local-symbol stripping with `xcrun strip -x`, then ad-hoc sign
    each variant. The XCFramework container remains unsigned.
 5. Package the three variants into one XCFramework ZIP and compute its SwiftPM
@@ -188,6 +199,8 @@ current host.
    exported ABI, and Cargo-free C and Swift consumers.
 7. Link and run the macOS variant beside an independent unwind-enabled Rust
    static library, preserving the Rust-runtime isolation check.
+   Separately execute the bridge's Rust tests using the iOS producer's
+   standard-library features on macOS, including its panic-containment test.
 8. Build generic package destinations, final-link the public device consumer,
    and run the complete Swift test target on an arm64 iOS Simulator.
 9. Compare final iOS imports with the committed required-reason API list. Any

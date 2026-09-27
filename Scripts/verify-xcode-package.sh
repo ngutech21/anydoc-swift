@@ -33,7 +33,7 @@ build_package() {
 
   env \
     PATH="$tool_path" \
-    "${bridge_environment[@]}" \
+    ${bridge_environment[@]+"${bridge_environment[@]}"} \
     xcodebuild \
       -quiet \
       -scheme AnyDocSwift \
@@ -70,6 +70,12 @@ cmp "$license" "$device_framework/LICENSE.txt"
 cmp "$notices" "$device_framework/ThirdPartyNotices.txt"
 cmp "$license" "$simulator_framework/LICENSE.txt"
 cmp "$notices" "$simulator_framework/ThirdPartyNotices.txt"
+for runtime_notice in "$root"/Native/licenses/Rust*Notices.*; do
+  notice_name="$(basename "$runtime_notice")"
+  cmp "$runtime_notice" "$macos_framework/Versions/A/Resources/$notice_name"
+  cmp "$runtime_notice" "$device_framework/$notice_name"
+  cmp "$runtime_notice" "$simulator_framework/$notice_name"
+done
 
 test "$(xcrun lipo -archs "$macos_framework/Versions/A/$framework_name")" = "arm64"
 test "$(xcrun lipo -archs "$device_framework/$framework_name")" = "arm64"
@@ -78,8 +84,8 @@ verify_platform() {
   local binary="$1"
   local platform="$2"
   xcrun vtool -show-build "$binary" | awk -v expected="$platform" '
-    $1 == "platform" { found = 1; if ($2 != expected) exit 1 }
-    END { exit found ? 0 : 1 }
+    $1 == "platform" { found = 1; if ($2 != expected) invalid = 1 }
+    END { exit found && !invalid ? 0 : 1 }
   '
 }
 
@@ -112,8 +118,8 @@ env PATH="$tool_path" xcrun --sdk iphoneos swiftc \
 test "$(xcrun lipo -archs "$scratch_root/public-consumer-ios-device")" = "arm64"
 verify_platform "$scratch_root/public-consumer-ios-device" "IOS"
 xcrun vtool -show-build "$scratch_root/public-consumer-ios-device" | awk '
-  $1 == "minos" { found = 1; if ($2 != "17.0") exit 1 }
-  END { exit found ? 0 : 1 }
+  $1 == "minos" { found = 1; if ($2 != "17.0") invalid = 1 }
+  END { exit found && !invalid ? 0 : 1 }
 '
 xcrun otool -L "$scratch_root/public-consumer-ios-device" | grep -F \
   '@rpath/AnyDocSwiftBridge.framework/AnyDocSwiftBridge'

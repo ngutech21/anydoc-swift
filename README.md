@@ -28,8 +28,9 @@ This independent community project is not affiliated with, endorsed by, or maint
 The source tree also contains unreleased support for iOS 17 or later on arm64
 devices and Apple-Silicon simulators. The current `0.2.2` package uses
 `binary-0.2.0`, whose Apple archive is macOS-only. iOS requires a new verified
-native release and a Swift package that pins it; the
-[required-reason audit](docs/ios-required-reason-audit.md) remains a release blocker.
+native release and a Swift package that pins it. The rebuilt iOS frameworks pass
+the [required-reason audit](docs/ios-required-reason-audit.md); release qualification
+is recorded in the [upgrade report](docs/pdf-inspector-1.24-upgrade.md).
 
 ## Installation
 
@@ -227,6 +228,12 @@ Text-based PDFs can be converted to Markdown locally. By default, an image-only,
 scanned, or mixed PDF with any page requiring OCR fails with
 `AnyDocConversionError.needsOCR(pages:pageCount:)`; no partial Markdown is
 returned. Page numbers are sorted, unique, and one-based.
+Some text PDFs that rely on predefined CMaps also return `needsOCR` because
+the upstream decoder cannot recover their text. This includes the Japan1,
+GB1, and CNS1 cases documented in the
+[CMap investigation](docs/cmap-portability-investigation.md).
+PDF layout reconstruction is approximate; headings, lists, and table boundaries
+may differ from the original document.
 Explicitly select [Hosted OCR](#hosted-ocr) to allow fallback for these PDFs.
 
 anydoc 0.2.4 intentionally has no structured document-model representation for

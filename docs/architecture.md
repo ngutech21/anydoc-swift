@@ -173,6 +173,10 @@ input buffers, writable output pointers, and live result handles.
 The full native conversion is enclosed by Rust's `catch_unwind`; a panic becomes
 the fixed `bridge.panic` failure instead of unwinding through C. Release builds
 therefore retain Rust unwinding.
+The iOS producer rebuilds the pinned standard library without Rust backtrace
+support; this removes filesystem-based symbolization without changing
+`catch_unwind` or the typed panic error. It does not replace a process-wide
+panic hook. macOS and Linux retain the toolchain's prebuilt standard library.
 
 ## Rust integration and document transport
 
@@ -314,6 +318,11 @@ numbers, and inconsistent native payloads become `.bridgeFailure`.
 PDF is available only through Markdown conversion because the pinned anydoc
 engine has no PDF document-model parser. OCR-required PDFs preserve sorted unique
 one-based page numbers and total page count; no partial Markdown is returned.
+The locked pdf-inspector dependency embeds its CMap resources. Its known
+Japan1, GB1, and CNS1 decoding limitations can still produce `needsOCR` for
+text-containing PDFs; successful conversion of every predefined CMap is not
+part of the initial iOS contract. iOS always uses the embedded resources and
+does not consult the optional upstream filesystem override.
 
 ## Binary distribution and release boundary
 
@@ -328,13 +337,14 @@ Repository verification continues to select a newly built local artifact with
 The source artifact also targets iOS 17 or later on arm64 devices and
 Apple-Silicon simulators. This remains an unreleased contract until a new
 immutable native release is verified and the manifest pins it. x86_64
-Simulator, Mac Catalyst, and visionOS are unsupported. The known privacy
-blocker is recorded in the [required-reason audit](ios-required-reason-audit.md).
+Simulator, Mac Catalyst, and visionOS are unsupported. The producer's privacy
+constraints are recorded in the [required-reason audit](ios-required-reason-audit.md).
 
 Apple artifacts use dynamic frameworks to isolate their Rust runtime. The
 XCFramework contains a versioned macOS arm64 framework, a flat iOS arm64 device
 framework, and a flat arm64 iOS Simulator framework. Each embeds its license
-and third-party notices before ad-hoc signing; the container remains unsigned.
+and third-party and Rust runtime notices before ad-hoc signing; the container
+remains unsigned.
 GNU/Linux x86_64 and aarch64 use target-specific static-library artifact bundles.
 Linux packaging merges the raw archive, prefixes every externally visible
 defined non-ABI symbol, and leaves only the declared C exports unprefixed.

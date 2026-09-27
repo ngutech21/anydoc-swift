@@ -79,16 +79,16 @@ verify_binary() {
 
   test "$(xcrun lipo -archs "$binary")" = "arm64"
   xcrun otool -hv "$binary" | awk '
-    $1 == "MH_MAGIC_64" { found = 1; if ($5 != "DYLIB") exit 1 }
-    END { exit found ? 0 : 1 }
+    $1 == "MH_MAGIC_64" { found = 1; if ($5 != "DYLIB") invalid = 1 }
+    END { exit found && !invalid ? 0 : 1 }
   '
   xcrun vtool -show-build "$binary" | awk -v expected="$platform" '
-    $1 == "platform" { found = 1; if ($2 != expected) exit 1 }
-    END { exit found ? 0 : 1 }
+    $1 == "platform" { found = 1; if ($2 != expected) invalid = 1 }
+    END { exit found && !invalid ? 0 : 1 }
   '
   xcrun vtool -show-build "$binary" | awk -v expected="$minimum_version" '
-    $1 == "minos" { found = 1; if ($2 != expected) exit 1 }
-    END { exit found ? 0 : 1 }
+    $1 == "minos" { found = 1; if ($2 != expected) invalid = 1 }
+    END { exit found && !invalid ? 0 : 1 }
   '
   test "$(xcrun otool -D "$binary" | tail -n 1)" = "$install_name"
   test "$(xcrun otool -L "$binary" | tail -n +2 | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')" = "4"
@@ -144,6 +144,9 @@ cmp "$modulemap" "$macos_version_root/Modules/module.modulemap"
 cmp "$root/Native/framework/Info.plist" "$macos_version_root/Resources/Info.plist"
 cmp "$license" "$macos_version_root/Resources/LICENSE.txt"
 cmp "$notices" "$macos_version_root/Resources/ThirdPartyNotices.txt"
+for runtime_notice in "$root"/Native/licenses/Rust*Notices.*; do
+  cmp "$runtime_notice" "$macos_version_root/Resources/$(basename "$runtime_notice")"
+done
 /usr/bin/plutil -lint "$macos_version_root/Resources/Info.plist"
 verify_signature "$macos_framework"
 
@@ -173,6 +176,9 @@ verify_flat_framework() {
   cmp "$info_plist" "$framework/Info.plist"
   cmp "$license" "$framework/LICENSE.txt"
   cmp "$notices" "$framework/ThirdPartyNotices.txt"
+  for runtime_notice in "$root"/Native/licenses/Rust*Notices.*; do
+    cmp "$runtime_notice" "$framework/$(basename "$runtime_notice")"
+  done
   /usr/bin/plutil -lint "$framework/Info.plist"
   test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$framework/Info.plist")" \
     = "$framework_name"

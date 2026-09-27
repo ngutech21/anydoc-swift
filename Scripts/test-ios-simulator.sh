@@ -59,7 +59,7 @@ rm -rf "$derived_data"
 test -z "$(env PATH="$tool_path" command -v cargo || true)"
 env \
   PATH="$tool_path" \
-  "${bridge_environment[@]}" \
+  ${bridge_environment[@]+"${bridge_environment[@]}"} \
   xcodebuild \
     -quiet \
     -scheme AnyDocSwift \
@@ -86,4 +86,7 @@ test "$(xcrun lipo -archs "$processed_binary")" = "arm64"
 xcrun vtool -show-build "$processed_binary" | grep -F 'platform IOSSIMULATOR'
 cmp "$root/LICENSE" "$processed_framework/LICENSE.txt"
 cmp "$root/THIRD_PARTY_NOTICES.txt" "$processed_framework/ThirdPartyNotices.txt"
+for runtime_notice in "$root"/Native/licenses/Rust*Notices.*; do
+  cmp "$runtime_notice" "$processed_framework/$(basename "$runtime_notice")"
+done
 codesign --verify --deep --strict --verbose=2 "$processed_framework"
