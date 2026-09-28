@@ -54,6 +54,7 @@ _generate-licenses output metadata:
     upstream_notices="$(jq -r '.crates[].package.manifest_path' "{{ metadata }}" | while IFS= read -r manifest; do find "$(dirname "$manifest")" -maxdepth 1 -iname 'NOTICE*' -print; done | LC_ALL=C sort -u)"; if [[ -n "$upstream_notices" ]]; then printf 'Unhandled upstream NOTICE files:\n%s\n' "$upstream_notices" >&2; exit 1; fi
     cd "{{ crate }}" && cargo about generate --config "{{ license_config }}" --manifest-path Cargo.toml --locked --fail --output-file "{{ output }}" "{{ license_template }}"
     test -s "{{ output }}"
+    if LC_ALL=C grep -Ein 'copyright.*<(year|owner|copyright holders)>' "{{ output }}"; then echo "Unresolved copyright placeholders; clarify the pinned upstream licenses in {{ license_config }}" >&2; exit 1; fi
 
 # Check the Linux artifact implementation without executing it.
 lint-shell:
