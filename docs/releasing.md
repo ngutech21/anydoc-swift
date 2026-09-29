@@ -19,10 +19,9 @@ Both workflows accept `MAJOR.MINOR.PATCH` without a leading `v`, run from
 `master`, and refuse an existing tag or release. Swift and native release
 versions can advance independently. All three manifest URLs must reference
 one native release, but its version need not match the Swift package version.
-Swift-only changes can reuse the existing native URLs and checksums; for
-example, Swift `0.2.2` continues to use `binary-0.2.0`. The Swift workflow
-still builds and tests the package against those published artifacts on every
-supported platform before publication.
+Swift-only changes can reuse the existing native URLs and checksums. The Swift
+workflow still builds and tests the package against those published artifacts
+on every supported platform before publication.
 
 ## Prerequisites
 
@@ -63,8 +62,10 @@ Update the complete Swift/C/Rust contract and its tests together; do not release
 an intermediate artifact that implements only part of the contract.
 
 Update affected API and behavior documentation with the implementation. Keep
-unpublished functionality identified as pending; release numbers belong in the
-README and compatibility record, not the architecture guide or `AGENTS.md`.
+unpublished functionality identified as pending. Keep exact package versions in
+the README installation example, dependency manifests, and compatibility record;
+avoid repeating them in general usage prose. Preserve exact versions in audit
+and upgrade reports where they identify the artifacts or dependencies verified.
 
 Run `just final-check` from the repository root and resolve failures before
 starting publication.
@@ -179,6 +180,7 @@ After the workflow succeeds:
 | `0.1.5` | `0.2.4` | 2 | 9 |
 | `0.2.0` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
 | `0.2.2` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
+| `0.2.3` | `0.2.4` (`42bf1c5…`) | 3 | 12 |
 
 ## Immutability and interrupted releases
 

@@ -2,10 +2,9 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ngutech21/anydoc-swift/ci.yml?branch=master&event=push&label=CI)](https://github.com/ngutech21/anydoc-swift/actions/workflows/ci.yml)
 [![Swift package release](https://img.shields.io/github/v/release/ngutech21/anydoc-swift?filter=%21binary-%2A&sort=semver&label=release)](https://github.com/ngutech21/anydoc-swift/releases)
-[![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138?logo=swift&logoColor=white)](#requirements)
-[![macOS 13+ (Apple Silicon)](https://img.shields.io/badge/macOS-13%2B%20%28Apple%20Silicon%29-blue?logo=apple&logoColor=white)](#requirements)
-[![iOS / iPadOS 17+](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B%20%28unreleased%29-blue?logo=apple&logoColor=white)](#requirements)
-[![GNU/Linux (x86_64, aarch64)](https://img.shields.io/badge/GNU%2FLinux-x86__64%20%7C%20aarch64-blue?logo=linux&logoColor=white)](#requirements)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fngutech21%2Fanydoc-swift%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ngutech21/anydoc-swift)
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fngutech21%2Fanydoc-swift%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ngutech21/anydoc-swift)
+![iOS / iPadOS 17+](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B%20-blue?logo=apple&logoColor=white)
 
 AnyDocSwift converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
 and CSV data to GitHub-Flavored Markdown in Swift applications.
@@ -14,7 +13,7 @@ Conversion runs locally by default and in-process through the Rust
 [Firecrawl anydoc](https://github.com/firecrawl/anydoc) engine. Applications
 install the package through SwiftPM and do not need Rust, Cargo, or an external
 service.
-AnyDocSwift 0.2.2 also supports explicitly opted-in hosted OCR through the
+AnyDocSwift also supports explicitly opted-in hosted OCR through the
 Firecrawl Parse API for PDFs that need it; see [Hosted OCR](#hosted-ocr).
 
 This independent community project is not affiliated with, endorsed by, or maintained by Firecrawl.
@@ -22,13 +21,13 @@ This independent community project is not affiliated with, endorsed by, or maint
 ## Requirements
 
 - Swift 6.2 or later
-- macOS 13 or later on Apple Silicon, or GNU/Linux on `x86_64` or `aarch64`
+- macOS 13 or later on Apple Silicon
+- iOS / iPadOS 17 or later on arm64 devices and Apple-Silicon simulators
+- GNU/Linux on `x86_64` or `aarch64`
   with glibc 2.26 or later
 
-The source tree also contains unreleased support for iOS 17 or later on arm64
-devices and Apple-Silicon simulators. The current `0.2.2` package uses
-`binary-0.2.0`, whose Apple archive is macOS-only. iOS requires a new verified
-native release and a Swift package that pins it. The rebuilt iOS frameworks pass
+Intel/x86_64 simulators, Mac Catalyst, and visionOS are unsupported.
+The published iOS frameworks pass
 the [required-reason audit](docs/ios-required-reason-audit.md); release qualification
 is recorded in the [upgrade report](docs/pdf-inspector-1.24-upgrade.md).
 
@@ -49,7 +48,7 @@ let package = Package(
   dependencies: [
     .package(
       url: "https://github.com/ngutech21/anydoc-swift.git",
-      exact: "0.2.2"
+      exact: "0.2.3"
     )
   ],
   targets: [
@@ -157,7 +156,7 @@ to reject unknown extensions.
 `AnyDocFormat(fileExtension:)` matches bare extensions case-insensitively using
 ASCII characters only. It does not remove leading dots or whitespace or extract
 extensions from full filenames. Unrecognized input, including `potx` and
-`potm`, returns `nil`, matching pinned anydoc 0.2.4's extension lookup.
+`potm`, returns `nil`, matching the pinned anydoc engine's extension lookup.
 
 `AnyDocFormat` cases identify parsers, rather than every filename alias. The
 `.xlsx` case selects the whole upstream Excel parser family, not a file
@@ -184,6 +183,10 @@ contains:
 The converter accepts complete in-memory documents. Standard limits are 64 MiB
 of input, 16 MiB of UTF-8 Markdown, and 128 MiB for a structured result. The
 structured limit counts the encoded manifest plus every retained asset buffer.
+
+These limits bound input and result sizes; they do not cap peak memory usage.
+Conversion may use more memory while parsing and constructing the result, even
+when the input and output stay within their configured limits.
 
 ```swift
 let converter = AnyDocConverter(
@@ -236,14 +239,13 @@ PDF layout reconstruction is approximate; headings, lists, and table boundaries
 may differ from the original document.
 Explicitly select [Hosted OCR](#hosted-ocr) to allow fallback for these PDFs.
 
-anydoc 0.2.4 intentionally has no structured document-model representation for
+The pinned anydoc engine has no structured document-model representation for
 PDF. `document(from:format:)` therefore rejects `.pdf`; the package does not
 synthesize a lossy graph.
 
 ### Hosted OCR
 
-Hosted OCR is available in the released AnyDocSwift 0.2.2 package. The
-`markdown(from:format:)` overload remains local-only. Explicitly
+The `markdown(from:format:)` overload remains local-only. Explicitly
 select `.hosted` to allow fallback after a structured `.needsOCR` failure:
 
 ```swift
@@ -302,14 +304,15 @@ persistence, mutation/builders, or custom rendering.
 
 ### Native artifacts
 
-AnyDocSwift 0.2.2 embeds **anydoc 0.2.4** with bridge ABI v3. Its manifest pins
-the immutable
-[`binary-0.2.0`](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.0)
-artifacts for macOS arm64 and GNU/Linux x86_64 and aarch64. SwiftPM verifies
-the downloaded artifact against its pinned checksum.
+AnyDocSwift embeds the anydoc engine in native artifacts for the supported
+platforms. [Package.swift](Package.swift) pins the immutable native release
+and each archive's checksum. SwiftPM verifies downloaded artifacts against
+those checksums.
 
-Swift package and native binary tags are separate: use `0.2.2` as the package
-version; `binary-0.2.0` identifies its native artifact release.
+Swift package tags (`X.Y.Z`) and native binary tags (`binary-X.Y.Z`) are
+separate. Use a Swift package tag as your dependency version. The
+[compatibility record](docs/releasing.md#compatibility-record) lists released
+packages and their embedded engine and bridge ABI versions.
 
 ## Architecture and contributing
 

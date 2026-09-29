@@ -1,8 +1,7 @@
 # Hosted OCR example
 
-This example uses hosted OCR from the released AnyDocSwift `0.2.2` package.
-Both this example and the local-only
-[`AnyDocSwiftExample`](../AnyDocSwiftExample) are pinned to that released version.
+This example demonstrates AnyDocSwift's opt-in hosted OCR fallback. Its
+dependency version is pinned in [Package.swift](Package.swift).
 
 From the repository root:
 

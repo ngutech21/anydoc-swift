@@ -3,9 +3,6 @@
 This native change shipped in the immutable
 [`binary-0.2.1` release](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.1)
 on 2026-09-29 and retains anydoc 0.2.4, Rust 1.94.1, ABI 3, macOS 13, and iOS 17.
-The current [`Package.swift`](../Package.swift) pins all three published archives
-and their verified checksums. A Swift package release containing these pins
-remains pending.
 The targeted Cargo update moves pdf-inspector 1.17.0 to 1.24.0 and lopdf
 0.42.0 to 0.45.0, with the required crypto/compression dependency changes.
 

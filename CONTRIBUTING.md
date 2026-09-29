@@ -228,7 +228,7 @@ triple that does not match the host.
 
 For the current native architecture, the path:
 
-1. builds the locked anydoc 0.2.4 bridge with Rust 1.94.1 and
+1. builds the locked anydoc bridge with the pinned Rust toolchain and
    `panic = "unwind"`;
 2. captures Cargo's ordered `native-static-libs` report and rejects any drift
    from [`Native/linux/native-static-libs.txt`](Native/linux/native-static-libs.txt);
@@ -273,7 +273,7 @@ intentional upgrade unit.
   focused Rust and Swift-adapter tests.
 - An ABI change must update the C header, Rust exports, Swift adapter, ABI
   version, symbol-graph and memory gates, smoke tests, and native binary release
-  together. ABI v3 belongs to one 0.2.0 artifact set; do not publish an
+  together. Publish each ABI contract as a complete artifact set, never an
   intermediate subset.
 - An anydoc upgrade must update the exact Cargo dependency, lockfile, embedded
   version and revision, fixture expectations, generated third-party notices,

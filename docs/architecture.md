@@ -334,11 +334,10 @@ arm64-only. Ordinary consumers download these packaged artifacts without Cargo.
 Repository verification continues to select a newly built local artifact with
 `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`.
 
-The source artifact also targets iOS 17 or later on arm64 devices and
-Apple-Silicon simulators. This remains an unreleased contract until a new
-immutable native release is verified and the manifest pins it. x86_64
-Simulator, Mac Catalyst, and visionOS are unsupported. The producer's privacy
-constraints are recorded in the [required-reason audit](ios-required-reason-audit.md).
+The published Apple artifact also targets iOS 17 or later on arm64 devices and
+Apple-Silicon simulators. x86_64 Simulator, Mac Catalyst, and visionOS are
+unsupported. The producer's privacy constraints are recorded in the
+[required-reason audit](ios-required-reason-audit.md).
 
 Apple artifacts use dynamic frameworks to isolate their Rust runtime. The
 XCFramework contains a versioned macOS arm64 framework, a flat iOS arm64 device
