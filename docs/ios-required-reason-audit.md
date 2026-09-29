@@ -1,10 +1,13 @@
 # iOS required-reason API audit
 
-Audit date: 2026-09-27. Both final rebuilt iOS frameworks pass the unchanged
-import audit with zero matched required-reason APIs. No privacy declaration or
-import exception is needed for these native binaries. Nothing has been released,
-and the published SwiftPM binary pins remain unchanged. Build checksums and the
-remaining platform qualification are recorded in the
+Audit date: 2026-09-27; published-artifact verification: 2026-09-29. Both iOS
+frameworks in the immutable
+[`binary-0.2.1` release](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.1)
+pass the unchanged import audit with zero matched required-reason APIs. No privacy
+declaration or import exception is needed for these native binaries. The current
+[`Package.swift`](../Package.swift) pins this release's URLs and verified checksums;
+publication of a Swift package containing those pins remains pending. Release
+verification and the remaining Apple validation limits are recorded in the
 [upgrade report](pdf-inspector-1.24-upgrade.md).
 
 The committed comparison list is

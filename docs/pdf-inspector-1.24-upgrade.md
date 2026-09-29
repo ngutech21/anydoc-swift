@@ -1,7 +1,11 @@
 # pdf-inspector 1.24.0 upgrade
 
-This unreleased native change retains anydoc 0.2.4, Rust 1.94.1, ABI 3,
-macOS 13, and iOS 17. Published SwiftPM URLs and checksums remain unchanged.
+This native change shipped in the immutable
+[`binary-0.2.1` release](https://github.com/ngutech21/anydoc-swift/releases/tag/binary-0.2.1)
+on 2026-09-29 and retains anydoc 0.2.4, Rust 1.94.1, ABI 3, macOS 13, and iOS 17.
+The current [`Package.swift`](../Package.swift) pins all three published archives
+and their verified checksums. A Swift package release containing these pins
+remains pending.
 The targeted Cargo update moves pdf-inspector 1.17.0 to 1.24.0 and lopdf
 0.42.0 to 0.45.0, with the required crypto/compression dependency changes.
 
@@ -61,7 +65,7 @@ required-reason API list. Their native linker requirements remain
 
 The archive grows by 3,416,292 bytes (36.0%), including the upgraded native
 graph, embedded CMaps, and runtime notices. These checksums identify this local
-build; subsequent builds and future immutable release assets have their own
+build; subsequent builds and the published immutable release assets have their own
 checksums. The privacy fix reduces the stock 1.24.0 archive from 13,553,509 bytes
 to 12,917,836 bytes despite the additional runtime notices.
 
@@ -79,6 +83,21 @@ to 12,917,836 bytes despite the additional runtime notices.
 Existing scanned/mixed-page OCR errors and hosted-OCR tests pass. Hosted OCR
 uses the deterministic test transport; no live OCR service was contacted.
 
-Hosted Xcode 26.2/27.0 and Linux x86_64/aarch64 qualification is pending the PR
-branch update. No release has been created. Physical-device execution and App
-Store submission have not been performed; the device gate checks arm64 linkage.
+The [binary release workflow](https://github.com/ngutech21/anydoc-swift/actions/runs/36562629867)
+passed all build, downloaded-artifact verification, and publication jobs for
+source commit `31fac1bb587d1b57c93a2682f8bb45318a49ea5d`. Hosted qualification
+covered Xcode 26.2 / Swift 6.2, Xcode 27.0 / Swift 6.4, and native Linux
+x86_64/aarch64, including the release memory gates.
+
+On 2026-09-29, all three downloaded archive SHA-256 hashes matched the release
+metadata and candidate manifest. Local `just verify-published-package` passed
+with Xcode 27.0 / Swift 6.4: Debug and Release builds, 76 macOS tests, 76 arm64
+iOS Simulator tests, generic Xcode builds, and final arm64 iOS-device linkage.
+`just verify-artifact-macos` against the downloaded XCFramework and
+`bash Scripts/audit-required-reason-apis.sh` also passed, with zero required-reason
+import matches in both published iOS slices. The candidate passed
+`just final-check`; Linux execution was verified by hosted CI, not locally.
+
+Physical-device execution and App Store submission have not been performed;
+the device gate checks arm64 linkage. Native release qualification does not
+establish App Store acceptance.
