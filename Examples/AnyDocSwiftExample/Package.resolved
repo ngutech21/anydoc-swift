@@ -1,13 +1,13 @@
 {
-  "originHash" : "642ed28a9da429d3b1fed84867f522749a20bf25a8e7abcaea30a7bde8a8197e",
+  "originHash" : "5ee99dd8c8431d0990da13a226191f49b5265c4d91a81956f5914ab20d445f5c",
   "pins" : [
     {
       "identity" : "anydoc-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ngutech21/anydoc-swift.git",
       "state" : {
-        "revision" : "c00cff7cf809acc84fa3298993f26fb8cabdd7c4",
-        "version" : "0.2.2"
+        "revision" : "8ff4d546dbcdcab7bf1343bbeff50ecb892c7374",
+        "version" : "0.2.3"
       }
     }
   ],
