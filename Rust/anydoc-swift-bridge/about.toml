@@ -6,12 +6,68 @@ accepted = [
   "Zlib",
 ]
 
-targets = ["aarch64-apple-darwin"]
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
+]
 ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
 workarounds = ["chrono", "cocoa"]
 private = { ignore = true }
+
+# This crate omits the repository-root license from its published archive.
+# cargo-about takes the revision from the locked crate's .cargo_vcs_info.json:
+# https://github.com/dropbox/rust-alloc-no-stdlib/blob/ae42d22078b98549e987d2f03d12df7b984fde47/LICENSE
+[alloc-stdlib.clarify]
+license = "BSD-3-Clause"
+
+[[alloc-stdlib.clarify.git]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+# Select the shipped BSD-3-Clause option of BSD-3-Clause OR MIT. The archive
+# contains no MIT text, so choosing MIT would produce a placeholder notice.
+# https://github.com/dropbox/rust-brotli-decompressor/blob/b56177b8eb3d2440536281397e5ffe06eedf1a5c/LICENSE
+[brotli-decompressor.clarify]
+license = "BSD-3-Clause"
+
+[[brotli-decompressor.clarify.files]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+# Both crates omit their shared repository-root license. Resolve it at the
+# revision in each locked crate's .cargo_vcs_info.json:
+# https://github.com/Michael-F-Bryan/include_dir/blob/d742c6fffce99ee89da91b934e7ce6fb2a82680c/LICENSE
+[include_dir.clarify]
+license = "MIT"
+
+[[include_dir.clarify.git]]
+path = "LICENSE"
+checksum = "9369f62987b3a116111f2edfdc4cc72633e44ddc94d5d0c68659cf537b76a31f"
+
+[include_dir_macros.clarify]
+license = "MIT"
+
+[[include_dir_macros.clarify.git]]
+path = "LICENSE"
+checksum = "9369f62987b3a116111f2edfdc4cc72633e44ddc94d5d0c68659cf537b76a31f"
+
+# The embedded Adobe CMaps carry their own BSD license in addition to the
+# crate's MIT license. Both files are included in every framework's notices.
+[pdf-inspector.clarify]
+license = "MIT AND BSD-3-Clause"
+
+[[pdf-inspector.clarify.files]]
+path = "LICENSE"
+license = "MIT"
+checksum = "c0689c6b1f93155007b113acbb55a3a9b8bf1c7bdae4b14aa4175b04b37207de"
+
+[[pdf-inspector.clarify.files]]
+path = "external/bcmaps/LICENSE"
+license = "BSD-3-Clause"
+checksum = "aa92ab5a472974865a96fd4a4e9c13bb41bf6fe1b309cb6b8da48bc9e19839a2"
 
 # The crate ships two whitespace-different copies of the MIT license.
 [miniz_oxide.clarify]

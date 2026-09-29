@@ -29,7 +29,7 @@ RUN case "$TARGETARCH" in \
   && echo "${rustup_sha256}  /tmp/rustup-init" | sha256sum --check --strict \
   && chmod +x /tmp/rustup-init \
   && /tmp/rustup-init -y --profile minimal --default-toolchain 1.94.1 \
-    --component clippy --component rustfmt --component llvm-tools-preview \
+    --component clippy --component rustfmt --component llvm-tools-preview --component rust-src \
   && rm /tmp/rustup-init
 
 ENV PATH="/root/.cargo/bin:${PATH}"

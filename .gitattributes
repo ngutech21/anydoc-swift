@@ -3,3 +3,7 @@ Tests/Fixtures/** -text
 
 # Handwritten PDFs can look textual while containing byte-offset xref tables.
 Tests/Fixtures/**/*.pdf binary
+
+# Preserve verbatim upstream notices, including their original whitespace.
+Native/licenses/Rust*Notices.* -whitespace
+THIRD_PARTY_NOTICES.txt -whitespace

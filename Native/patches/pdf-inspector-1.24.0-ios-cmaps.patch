@@ -1,0 +1,11 @@
+--- a/src/tounicode.rs
++++ b/src/tounicode.rs
+@@ -9 +9 @@
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+@@ -2238 +2238 @@
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]
+@@ -2245 +2245 @@
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(not(any(target_arch = "wasm32", target_os = "ios")))]

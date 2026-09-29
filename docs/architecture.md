@@ -52,16 +52,20 @@ OCR-required failure.
 | [`Sources/AnyDocSwift/`](../Sources/AnyDocSwift/) | Owns the public actor, format/error/document types, private decoder, and private C adapter. |
 | [`Sources/AnyDocSwift/HostedOCRAdapter.swift`](../Sources/AnyDocSwift/HostedOCRAdapter.swift) | Owns hosted configuration, multipart requests, Fetch redirects, deadlines, and private response/error handling. |
 | [`Native/include/`](../Native/include/) | Defines the portable C ABI. |
-| [`Native/framework/`](../Native/framework/) | Defines the macOS framework metadata and exact export list. |
+| [`Native/framework/`](../Native/framework/) | Defines Apple framework metadata and the exact export list. |
+| [`Native/privacy/`](../Native/privacy/) | Records the required-reason imports checked by the iOS release gate. |
 | [`Native/linux/`](../Native/linux/) | Defines Linux artifact metadata, native linker requirements, and exact export list. |
 | [`Rust/anydoc-swift-bridge/`](../Rust/anydoc-swift-bridge/) | Calls anydoc, serializes the versioned document transport, and owns native results. |
 | [`Tests/AnyDocSwiftTests/`](../Tests/AnyDocSwiftTests/) | Tests public behavior, transport validation, concurrency, cancellation, ABI shape, and ownership. |
 | [`Tests/Fixtures/`](../Tests/Fixtures/) | Holds provenance-recorded upstream fixtures for real conversions. |
 | [`Tests/ArtifactSmoke/`](../Tests/ArtifactSmoke/) | Contains Cargo-free C and Swift consumers of packaged artifacts. |
+| [`Tests/PublicConsumerSmoke/`](../Tests/PublicConsumerSmoke/) | Contains the public Swift consumer final-linked for iOS devices. |
 | [`Tests/LinuxRustComposition/`](../Tests/LinuxRustComposition/) | Verifies that a Swift consumer can link the bridge beside another Rust static library. |
 | [`Tests/MemoryProbe/`](../Tests/MemoryProbe/) | Generates deterministic asset/manifest-heavy documents for the release-only RSS gate. |
 | [`Scripts/check-public-interface.sh`](../Scripts/check-public-interface.sh) | Proves the generated public symbol graph contains no bridge declarations. |
 | [`Scripts/memory-probe.sh`](../Scripts/memory-probe.sh) | Runs the non-default Release memory qualification. |
+| [`Scripts/build-artifact.sh`](../Scripts/build-artifact.sh) | Packages macOS, iOS-device, and iOS-simulator variants in one XCFramework. |
+| [`Scripts/test-ios-simulator.sh`](../Scripts/test-ios-simulator.sh) | Runs the complete Swift test target on a temporary arm64 iPhone Simulator. |
 | [`Scripts/linux-artifact.sh`](../Scripts/linux-artifact.sh) | Builds, namespaces, packages, audits, and tests one native Linux artifact. |
 | [`Justfile`](../Justfile) | Provides supported build, test, packaging, and verification entry points. |
 
@@ -169,6 +173,10 @@ input buffers, writable output pointers, and live result handles.
 The full native conversion is enclosed by Rust's `catch_unwind`; a panic becomes
 the fixed `bridge.panic` failure instead of unwinding through C. Release builds
 therefore retain Rust unwinding.
+The iOS producer rebuilds the pinned standard library without Rust backtrace
+support; this removes filesystem-based symbolization without changing
+`catch_unwind` or the typed panic error. It does not replace a process-wide
+panic hook. macOS and Linux retain the toolchain's prebuilt standard library.
 
 ## Rust integration and document transport
 
@@ -310,6 +318,11 @@ numbers, and inconsistent native payloads become `.bridgeFailure`.
 PDF is available only through Markdown conversion because the pinned anydoc
 engine has no PDF document-model parser. OCR-required PDFs preserve sorted unique
 one-based page numbers and total page count; no partial Markdown is returned.
+The locked pdf-inspector dependency embeds its CMap resources. Its known
+Japan1, GB1, and CNS1 decoding limitations can still produce `needsOCR` for
+text-containing PDFs; successful conversion of every predefined CMap is not
+part of the initial iOS contract. iOS always uses the embedded resources and
+does not consult the optional upstream filesystem override.
 
 ## Binary distribution and release boundary
 
@@ -321,8 +334,18 @@ arm64-only. Ordinary consumers download these packaged artifacts without Cargo.
 Repository verification continues to select a newly built local artifact with
 `ANYDOC_SWIFT_USE_LOCAL_BRIDGE=1`.
 
-macOS arm64 uses a dynamic XCFramework to isolate its Rust runtime. GNU/Linux
-x86_64 and aarch64 use target-specific static-library artifact bundles.
+The source artifact also targets iOS 17 or later on arm64 devices and
+Apple-Silicon simulators. This remains an unreleased contract until a new
+immutable native release is verified and the manifest pins it. x86_64
+Simulator, Mac Catalyst, and visionOS are unsupported. The producer's privacy
+constraints are recorded in the [required-reason audit](ios-required-reason-audit.md).
+
+Apple artifacts use dynamic frameworks to isolate their Rust runtime. The
+XCFramework contains a versioned macOS arm64 framework, a flat iOS arm64 device
+framework, and a flat arm64 iOS Simulator framework. Each embeds its license
+and third-party and Rust runtime notices before ad-hoc signing; the container
+remains unsigned.
+GNU/Linux x86_64 and aarch64 use target-specific static-library artifact bundles.
 Linux packaging merges the raw archive, prefixes every externally visible
 defined non-ABI symbol, and leaves only the declared C exports unprefixed.
 Cargo-reported native library requirements are committed and verified rather

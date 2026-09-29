@@ -1,4 +1,9 @@
 [toolchain]
 channel = "1.94.1"
 profile = "minimal"
-components = ["clippy", "rustfmt", "llvm-tools-preview"]
+components = ["clippy", "rustfmt", "llvm-tools-preview", "rust-src"]
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
+]

@@ -48,6 +48,37 @@ Markdown is pinned in the test that consumes the fixture.
 - SHA-256: `7d1fd0932634cffa80bf9fb1bd73a6871f82a2cb29b4d7bcfb689927bc5d84e7`
 - License: MIT, inherited from the upstream repository
 
+## Predefined CMap regression PDFs
+
+`pdf/handmade-cmap-japan1.pdf`, `pdf/handmade-cmap-gb1.pdf`, and
+`pdf/handmade-cmap-cns1.pdf` are locally authored, deterministic PDF 1.4 files.
+Each has one page, one Type0 font using Identity-H, a CIDFontType0 descendant,
+and an Adobe CIDSystemInfo collection. They contain neither a ToUnicode map
+nor an embedded font program, so text extraction requires the predefined
+collection's CID-to-Unicode table. The content stream contains 24 CIDs at
+12 points; object offsets and lengths are explicit, with no compression,
+timestamps, document identifiers, or external references.
+
+The CID values were checked against Adobe's
+[mapping resources](https://github.com/adobe-type-tools/mapping-resources-pdf/tree/2dd5e53fb74a01718b9dfd448a0d1cce6fff2aa5/pdf2unicode)
+at revision `2dd5e53fb74a01718b9dfd448a0d1cce6fff2aa5`. The table below records
+the intended Unicode text independently of the decoder under test.
+
+| File | Collection | Decimal CIDs per phrase | Phrase and repetition | SHA-256 |
+| --- | --- | --- | --- | --- |
+| `handmade-cmap-japan1.pdf` | Japan1 | 3284, 3722, 1952 | `日本語` eight times | `ecc17479e542ef102e02cbd669b8e5425fcee8fd25a999ee144f869656c04b1e` |
+| `handmade-cmap-gb1.pdf` | GB1 | 4559, 3795, 3795, 1430 | `中文文档` six times | `8f6c282e71da6b9d1256ee9d2b0386dc2050a2e57f9f593e5af2e13c2d93092b` |
+| `handmade-cmap-cns1.pdf` | CNS1 | 5183, 5911, 661, 726 | `繁體中文` six times | `b96788a91cb6527e10cfaf220e699884a72e970cea3fd343fe0ecbc7543441cc` |
+
+- License: MIT, under the project license.
+- These fixtures exposed an upstream decoding failure before the planned
+  resource-isolation control could be established; see
+  [the investigation](../../docs/cmap-portability-investigation.md).
+- `CMapLimitationTests` exercises the public converter and requires the exact
+  typed `needsOCR(pages: [1], pageCount: 1)` error for each fixture. These are
+  limitation regressions, not proof of successful CMap conversion or resource
+  portability. The first iOS release can retain this documented limitation.
+
 ## `docx/text.docx`
 
 - Source: `firecrawl/anydoc` test fixture

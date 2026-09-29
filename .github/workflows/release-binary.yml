@@ -417,7 +417,7 @@ jobs:
           cmp ".build/original/$ASSET_NAME" "$downloaded"
           expected_checksum="$(awk '{ print $1 }' ".build/original/$ASSET_NAME.sha256")"
           test "$(swift package compute-checksum "$downloaded")" = "$expected_checksum"
-          just verify-artifact-macos "$downloaded"
+          just verify-release-artifact "$downloaded"
           Scripts/memory-probe.sh
 
   verify-linux:
