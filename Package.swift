@@ -17,8 +17,8 @@ let useLocallyBuiltBridge =
     : .binaryTarget(
       name: "AnyDocSwiftBridge",
       url:
-        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge.xcframework.zip",
-      checksum: "2feaf71ce75dc101ba3c07f065950fb95da72f99c1de1e891d88611814165576"
+        "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.1/AnyDocSwiftBridge.xcframework.zip",
+      checksum: "ec81289086e0ef7f23212172433ea184b8f634e55f757a825210e2a91fd4f6f6"
     )
   let bridgeLinkerSettings: [LinkerSetting] = []
 #elseif os(Linux) && (arch(x86_64) || arch(arm64))
@@ -33,15 +33,15 @@ let useLocallyBuiltBridge =
       bridgeTarget = .binaryTarget(
         name: "AnyDocSwiftBridge",
         url:
-          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip",
-        checksum: "d9311beacac609e99404e15dfedd3ea0defaa2d48a83cda38f5220067104a3a6"
+          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.1/AnyDocSwiftBridge-x86_64-unknown-linux-gnu.artifactbundle.zip",
+        checksum: "520d353696ee28d63d7406be053af56a388b894676f3c493cd2b37b4df9260ad"
       )
     #else
       bridgeTarget = .binaryTarget(
         name: "AnyDocSwiftBridge",
         url:
-          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.0/AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip",
-        checksum: "aafa2ef2e5b20ae5ca4d2ba40f68bf603c8c8dd0f783f918ff816eeac013597f"
+          "https://github.com/ngutech21/anydoc-swift/releases/download/binary-0.2.1/AnyDocSwiftBridge-aarch64-unknown-linux-gnu.artifactbundle.zip",
+        checksum: "f8b35c5b20c32535ad2eb055a94cc7fb965e9b517461f3be627f065d247b5358"
       )
     #endif
   }
