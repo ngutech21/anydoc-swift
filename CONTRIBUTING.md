@@ -85,6 +85,46 @@ just artifact-linux-container
 Use focused checks while iterating. Run `just final-check` before handing off a
 completed change, and report the exact result of every claimed verifier.
 
+## Documentation
+
+Keep public API reference text in `///` comments beside declarations. Longer
+guides and the module landing page live in
+[`Sources/AnyDocSwift/AnyDocSwift.docc`](Sources/AnyDocSwift/AnyDocSwift.docc).
+Link symbols with double backticks and articles with `<doc:ArticleName>`.
+Keep examples and behavioral claims consistent with the README, implementation,
+and public tests. Keep exact release versions in the existing installation
+example and release records rather than duplicating them in the catalog.
+
+On an Apple-Silicon Mac with Xcode, open `Package.swift`, select the
+`AnyDocSwift` scheme and a Mac destination, and choose **Product > Build
+Documentation**. For a reproducible build from the repository root, run:
+
+```sh
+just docs
+open .build/documentation/Build/Products/Debug/AnyDocSwift.doccarchive
+```
+
+`just docs` builds for macOS arm64 and treats DocC warnings, including broken
+symbol/article links, as errors. It uses the checksum-pinned published bridge
+by default, like a package consumer. No DocC plugin dependency is needed for
+this Xcode workflow. The command is included in `just ci-swift-macos` and the
+macOS `just final-check` path; it requires Xcode and is not a Linux command.
+
+[`.spi.yml`](.spi.yml) asks Swift Package Index to build and host documentation
+for the public `AnyDocSwift` target, using its default macOS platform. SPI
+injects its DocC plugin automatically; keep the private bridge out of the
+documentation target list. Validate configuration edits with the
+[SPI manifest validator](https://swiftpackageindex.com/validate-spi-manifest).
+
+Hosting begins only after SPI processes a pushed revision containing the
+configuration and successfully builds its documentation. Default-branch
+updates may take up to 24 hours; releases are processed as soon as possible.
+Inspect the package's hosted documentation and build log after publishing;
+a local DocC build does not prove that deployment succeeded. See the
+[SPI configuration guide](https://github.com/SwiftPackageIndex/SPIManifest/blob/main/Sources/SPIManifest/Documentation.docc/CommonUseCases.md)
+and the [release procedure](docs/releasing.md) for separately authorized
+publication. Existing release tags remain immutable.
+
 ## Code scanning
 
 [CodeQL](.github/workflows/codeql.yml) scans Swift, Rust, C/C++, Python, and

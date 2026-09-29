@@ -78,6 +78,10 @@ ci-rust: lint-rust lint-shell build-rust test-rust check-licenses
 lint-swift:
     if [[ "$(uname -s)" = "Darwin" ]]; then xcrun swift format lint --strict --recursive Package.swift Sources Tests; else swift format lint --strict --recursive Package.swift Sources Tests; fi
 
+# Build the public DocC catalog on macOS, failing on documentation warnings.
+docs:
+    xcrun xcodebuild -quiet docbuild -scheme AnyDocSwift -destination "generic/platform=macOS" -derivedDataPath "{{ root }}/.build/documentation" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO OTHER_DOCC_FLAGS="--warnings-as-errors"
+
 # Build the macOS, iOS-device, and iOS-simulator XCFramework on an Apple host.
 build-artifact-macos: check-licenses
     bash "{{ root }}/Scripts/build-artifact.sh"
@@ -216,7 +220,7 @@ ci-swift:
     if [[ "$(uname -s)" = "Darwin" ]]; then just ci-swift-macos; elif [[ "$(uname -s)" = "Linux" ]]; then just ci-swift-linux-container; else echo "unsupported Swift host: $(uname -s)" >&2; exit 1; fi
 
 # Run every macOS Swift check used by continuous integration.
-ci-swift-macos: lint-swift build-swift-macos test-swift-macos test-ios-rust-runtime check-public-interface-macos verify-xcode-package test-ios-simulator audit-required-reason-apis
+ci-swift-macos: lint-swift build-swift-macos test-swift-macos test-ios-rust-runtime check-public-interface-macos verify-xcode-package test-ios-simulator audit-required-reason-apis docs
 
 # Run all continuous-integration checks locally.
 ci:

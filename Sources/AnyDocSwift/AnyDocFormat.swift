@@ -1,21 +1,32 @@
 /// A canonical parser understood by the embedded anydoc engine.
 ///
 /// These cases identify parsers, not every filename extension alias. Use
-/// `init(fileExtension:)` to look up an extension. When no format is supplied
+/// ``init(fileExtension:)`` to look up an extension. When no format is supplied
 /// to a converter, anydoc detects the parser from the document bytes.
 public enum AnyDocFormat: String, Sendable, Equatable {
+  /// Binary Word documents (`doc`).
   case doc
+  /// Open XML Word documents (`docx` and `docm`).
   case docx
+  /// OpenDocument text documents (`odt`).
   case odt
+  /// PDF documents, supported only for Markdown conversion.
   case pdf
+  /// Binary PowerPoint presentations (`ppt`, `pps`, and `pot`).
   case ppt
+  /// Open XML PowerPoint presentations (`pptx`, `pptm`, `ppsx`, and `ppsm`).
   case pptx
+  /// Rich Text Format documents (`rtf`).
   case rtf
+  /// EPUB publications (`epub`).
   case epub
   /// The Excel parser family, including XLSX, XLSM, XLSB, and legacy XLS.
   case xlsx
+  /// OpenDocument spreadsheets (`ods`).
   case ods
+  /// OpenDocument presentations (`odp`).
   case odp
+  /// Comma-separated values; select explicitly when content has no signature.
   case csv
 
   /// Looks up the parser named by a bare filename extension.

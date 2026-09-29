@@ -64,6 +64,19 @@ let package = Package(
 
 SwiftPM downloads the required native library automatically.
 
+## Documentation
+
+The [DocC catalog](Sources/AnyDocSwift/AnyDocSwift.docc/AnyDocSwift.md) contains
+guides for getting started, formats and PDFs, structured documents, limits and
+errors, and hosted OCR. API reference documentation comes from the public
+Swift declarations and their documentation comments.
+
+Swift Package Index hosting is configured in [`.spi.yml`](.spi.yml). Documentation is
+available through the **Documentation** link on the
+[package page](https://swiftpackageindex.com/ngutech21/anydoc-swift).
+See [contributing documentation](CONTRIBUTING.md#documentation) for local
+preview and build instructions.
+
 ## Quick start
 
 Load a file into `Data` or pass bytes you already have:

@@ -169,6 +169,11 @@ After the workflow succeeds:
   now that the Swift tag exists; verify that the example resolves and runs.
 - Add the released package's engine, ABI, and export information to the
   compatibility record below.
+- If the release contains the DocC catalog or hosting configuration, verify
+  that Swift Package Index builds its documentation and the package page's
+  **Documentation** link opens the intended revision. Follow the
+  [documentation workflow](../CONTRIBUTING.md#documentation); a local DocC
+  build alone does not establish that hosted publication succeeded.
 - Remove any pending-release wording for the functionality just published.
 - Close the iOS support issue only after the published-package gates pass.
 - Retain links to both workflow runs and their verification evidence.

@@ -8,18 +8,36 @@ public import Foundation
 /// native work starts skips the native call. Once native work starts it cannot
 /// be interrupted; the native result is released before cancellation is
 /// reported.
+///
+/// Use ``markdown(from:format:)`` for local Markdown conversion,
+/// ``markdown(from:format:ocr:)`` to explicitly allow hosted OCR, or
+/// ``document(from:format:)`` to inspect a parsed document graph.
 public actor AnyDocConverter {
+  /// Input and result size bounds for each conversion, measured in bytes.
+  ///
+  /// These bounds do not cap peak memory use while parsing a document.
   public struct Limits: Sendable, Equatable {
+    /// Allows 64 MiB of input, 16 MiB of Markdown, and 128 MiB of document data.
     public static let standard = Limits(
       maximumInputBytes: 64 * 1024 * 1024,
       maximumOutputBytes: 16 * 1024 * 1024,
       maximumDocumentBytes: 128 * 1024 * 1024
     )
 
+    /// The largest complete input buffer accepted before parsing or uploading.
     public let maximumInputBytes: UInt64
+    /// The largest Markdown result, measured in UTF-8 bytes.
     public let maximumOutputBytes: UInt64
+    /// The largest structured result, counting its encoded manifest and assets.
     public let maximumDocumentBytes: UInt64
 
+    /// Creates explicit input and result size bounds.
+    ///
+    /// - Parameters:
+    ///   - maximumInputBytes: Maximum input buffer size in bytes.
+    ///   - maximumOutputBytes: Maximum UTF-8 Markdown size in bytes.
+    ///   - maximumDocumentBytes: Maximum combined document manifest and asset
+    ///     size in bytes. Defaults to 128 MiB.
     public init(
       maximumInputBytes: UInt64,
       maximumOutputBytes: UInt64,
@@ -43,6 +61,9 @@ public actor AnyDocConverter {
   private var active = false
   private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
 
+  /// Creates a converter with its own FIFO operation queue.
+  ///
+  /// - Parameter limits: Input and result size bounds for every operation.
   public init(limits: Limits = .standard) {
     let queue = DispatchQueue(
       label: "io.ngutech21.AnyDocSwift.converter.\(UUID().uuidString)"
@@ -86,6 +107,15 @@ public actor AnyDocConverter {
   ///
   /// A supplied format authoritatively selects its parser. Passing `nil`
   /// delegates format detection to anydoc; signature-less CSV must be named.
+  /// This overload never uploads data. A PDF that requires OCR fails without
+  /// returning partial Markdown.
+  ///
+  /// - Parameters:
+  ///   - data: The complete document bytes.
+  ///   - format: The parser to use, or `nil` for content-based detection.
+  /// - Returns: The converted GitHub-Flavored Markdown.
+  /// - Throws: ``AnyDocConversionError`` for conversion or size-limit failures,
+  ///   or `CancellationError` when the task is cancelled.
   public func markdown(
     from data: Data,
     format: AnyDocFormat? = nil
@@ -97,6 +127,17 @@ public actor AnyDocConverter {
   ///
   /// Hosted configuration is resolved only after a structured OCR-required error.
   /// Successful local conversions and other native failures never make a request.
+  ///
+  /// - Important: Obtain consent to send the entire PDF to the chosen service
+  ///   before selecting a hosted policy.
+  ///
+  /// - Parameters:
+  ///   - data: The complete document bytes.
+  ///   - format: The parser to use, or `nil` for content-based detection.
+  ///   - ocr: Whether an OCR-required PDF may be uploaded for hosted conversion.
+  /// - Returns: Markdown from local conversion or the permitted hosted fallback.
+  /// - Throws: ``AnyDocConversionError`` for local, hosted, or size-limit
+  ///   failures, or `CancellationError` when the task is cancelled.
   public func markdown(
     from data: Data,
     format: AnyDocFormat? = nil,
@@ -125,6 +166,13 @@ public actor AnyDocConverter {
   /// A supplied format authoritatively selects its parser. Passing `nil`
   /// delegates format detection to anydoc. PDF has no document-model form and
   /// is supported only by ``markdown(from:format:)``.
+  ///
+  /// - Parameters:
+  ///   - data: The complete document bytes.
+  ///   - format: The parser to use, or `nil` for content-based detection.
+  /// - Returns: An immutable document graph owning its embedded asset bytes.
+  /// - Throws: ``AnyDocConversionError`` for conversion or size-limit failures,
+  ///   or `CancellationError` when the task is cancelled.
   public func document(
     from data: Data,
     format: AnyDocFormat? = nil
