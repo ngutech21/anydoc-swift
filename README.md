@@ -4,8 +4,8 @@
 [![Swift package release](https://img.shields.io/github/v/release/ngutech21/anydoc-swift?filter=%21binary-%2A&sort=semver&label=release)](https://github.com/ngutech21/anydoc-swift/releases)
 [![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138?logo=swift&logoColor=white)](#requirements)
 [![macOS 13+ (Apple Silicon)](https://img.shields.io/badge/macOS-13%2B%20%28Apple%20Silicon%29-blue?logo=apple&logoColor=white)](#requirements)
+[![iOS / iPadOS 17+](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B%20%28unreleased%29-blue?logo=apple&logoColor=white)](#requirements)
 [![GNU/Linux (x86_64, aarch64)](https://img.shields.io/badge/GNU%2FLinux-x86__64%20%7C%20aarch64-blue?logo=linux&logoColor=white)](#requirements)
-[![License](https://img.shields.io/github/license/ngutech21/anydoc-swift)](LICENSE)
 
 AnyDocSwift converts Word, PowerPoint, Excel, OpenDocument, PDF, EPUB, RTF,
 and CSV data to GitHub-Flavored Markdown in Swift applications.
