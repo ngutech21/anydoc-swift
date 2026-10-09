@@ -121,72 +121,50 @@ final class FakeNativeBridge: @unchecked Sendable {
 
   typealias ResponseProvider = @Sendable (Invocation) -> Response?
 
-  private final class StableBytes: @unchecked Sendable {
-    let pointer: UnsafeMutablePointer<UInt8>?
+  // Elements stay immutable after initialization; borrowed pointers must not outlive this owner.
+  private final class StableBuffer<Element: Sendable>: @unchecked Sendable {
+    let pointer: UnsafeMutablePointer<Element>?
     let count: Int
 
-    init(_ bytes: [UInt8]?) {
-      guard let bytes else {
+    init(_ elements: [Element]?) {
+      guard let elements else {
         pointer = nil
         count = 0
         return
       }
-      count = bytes.count
-      let pointer = UnsafeMutablePointer<UInt8>.allocate(capacity: max(1, bytes.count))
-      for (index, byte) in bytes.enumerated() {
-        pointer[index] = byte
-      }
+      count = elements.count
+      // Present-empty buffers must keep a nonnull pointer, unlike missing buffers.
+      let pointer = UnsafeMutablePointer<Element>.allocate(capacity: max(1, count))
+      pointer.initialize(from: elements, count: count)
       self.pointer = pointer
     }
 
     deinit {
-      pointer?.deallocate()
-    }
-  }
-
-  private final class StablePages: @unchecked Sendable {
-    let pointer: UnsafeMutablePointer<UInt32>?
-    let count: Int
-
-    init(_ pages: [UInt32]?) {
-      guard let pages else {
-        pointer = nil
-        count = 0
-        return
-      }
-      count = pages.count
-      let pointer = UnsafeMutablePointer<UInt32>.allocate(capacity: max(1, pages.count))
-      for (index, page) in pages.enumerated() {
-        pointer[index] = page
-      }
-      self.pointer = pointer
-    }
-
-    deinit {
+      pointer?.deinitialize(count: count)
       pointer?.deallocate()
     }
   }
 
   private final class StableAsset: @unchecked Sendable {
     let status: Int32
-    let bytes: StableBytes
+    let bytes: StableBuffer<UInt8>
     let reportedLength: Int?
 
     init(_ response: AssetResponse) {
       status = response.status
-      bytes = StableBytes(response.bytes)
+      bytes = StableBuffer(response.bytes)
       reportedLength = response.reportedLength
     }
   }
 
   private final class ResultHandle: @unchecked Sendable {
     let status: Int32
-    let markdown: StableBytes
-    let documentManifest: StableBytes
+    let markdown: StableBuffer<UInt8>
+    let documentManifest: StableBuffer<UInt8>
     let documentAssets: [StableAsset]
-    let errorCode: StableBytes
-    let errorMessage: StableBytes
-    let ocrPages: StablePages
+    let errorCode: StableBuffer<UInt8>
+    let errorMessage: StableBuffer<UInt8>
+    let ocrPages: StableBuffer<UInt32>
     let ocrPageCount: UInt32
     let reportedMarkdownLength: Int?
     let reportedManifestLength: Int?
@@ -194,12 +172,12 @@ final class FakeNativeBridge: @unchecked Sendable {
 
     init(response: Response) {
       status = response.status
-      markdown = StableBytes(response.markdown)
-      documentManifest = StableBytes(response.documentManifest)
+      markdown = StableBuffer(response.markdown)
+      documentManifest = StableBuffer(response.documentManifest)
       documentAssets = response.documentAssets.map(StableAsset.init)
-      errorCode = StableBytes(response.errorCode)
-      errorMessage = StableBytes(response.errorMessage)
-      ocrPages = StablePages(response.ocrPages)
+      errorCode = StableBuffer(response.errorCode)
+      errorMessage = StableBuffer(response.errorMessage)
+      ocrPages = StableBuffer(response.ocrPages)
       ocrPageCount = response.ocrPageCount
       reportedMarkdownLength = response.reportedMarkdownLength
       reportedManifestLength = response.reportedManifestLength
@@ -209,7 +187,7 @@ final class FakeNativeBridge: @unchecked Sendable {
 
   private let lock = NSLock()
   private let responseProvider: ResponseProvider
-  private let version: StableBytes
+  private let version: StableBuffer<UInt8>
   private var storedInvocations: [Invocation] = []
   private var storedFreeCount = 0
   private var storedCopyCount = 0
@@ -225,7 +203,7 @@ final class FakeNativeBridge: @unchecked Sendable {
     responseProvider: @escaping ResponseProvider = { _ in .success("Markdown") }
   ) {
     self.abiVersion = abiVersion
-    self.version = StableBytes(versionBytes)
+    self.version = StableBuffer(versionBytes)
     self.responseProvider = responseProvider
   }
 
@@ -385,7 +363,7 @@ final class FakeNativeBridge: @unchecked Sendable {
   }
 
   private static func buffer(
-    _ buffer: StableBytes?,
+    _ buffer: StableBuffer<UInt8>?,
     reportedLength: Int? = nil,
     outLength: UnsafeMutablePointer<Int>?
   ) -> UnsafePointer<UInt8>? {
