@@ -97,6 +97,7 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
 
     let document = try await converter.document(from: Data([1]), format: .docx)
 
+    requireSendable(document)
     XCTAssertEqual(document.blocks.count, 14)
     guard case .heading(level: 7, anchor: "heading", let content) = document.blocks[0] else {
       return XCTFail("Expected heading")
@@ -440,6 +441,10 @@ final class AnyDocConverterTests: XCTestCase, @unchecked Sendable {
     gate.release()
     let result = try await task.value
     XCTAssertEqual(result, "done")
+  }
+
+  private func requireSendable<T: Sendable>(_ value: T) {
+    _ = value
   }
 
   private func serialEnqueue(label: String) -> AnyDocConverter.Enqueue {
