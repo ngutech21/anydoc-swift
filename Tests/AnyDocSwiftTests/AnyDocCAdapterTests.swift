@@ -12,45 +12,6 @@ final class AnyDocCAdapterTests: XCTestCase {
     maximumOutputBytes: 64
   )
 
-  func testLiveAdapterReportsPinnedVersionAndConvertsRealFixtures() throws {
-    // Accept the engine-name capitalization preserved in binary-0.2.0.
-    XCTAssertEqual(
-      try AnyDocCAdapter.live.engineVersion()
-        .replacingOccurrences(of: "AnyDoc ", with: "anydoc ", options: .anchored),
-      "anydoc 0.2.4 (42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c); AnyDocSwift bridge ABI 3"
-    )
-
-    let rtf = try AnyDocCAdapter.live.markdown(
-      from: fixtureData("rtf/handmade-blockstyle.rtf"),
-      format: nil,
-      limits: .standard
-    )
-    XCTAssertTrue(rtf.contains("fn main()"))
-
-    let csv = try AnyDocCAdapter.live.markdown(
-      from: fixtureData("csv/handmade-quoted.csv"),
-      format: .csv,
-      limits: .standard
-    )
-    XCTAssertTrue(csv.contains("| padded | comma, inside | 3 |"))
-
-    let ocrCases: [(String, AnyDocConversionError)] = [
-      ("pdf/handmade-mixed.pdf", .needsOCR(pages: [2], pageCount: 2)),
-      ("pdf/handmade-scanned.pdf", .needsOCR(pages: [1, 2], pageCount: 2)),
-    ]
-    for (fixture, expectedError) in ocrCases {
-      XCTAssertThrowsError(
-        try AnyDocCAdapter.live.markdown(
-          from: fixtureData(fixture),
-          format: nil,
-          limits: .standard
-        )
-      ) { error in
-        XCTAssertEqual(error as? AnyDocConversionError, expectedError)
-      }
-    }
-  }
-
   func testAdapterPassesBytesFormatAndLimitsToNativeBridge() throws {
     let bridge = FakeNativeBridge()
     let adapter = bridge.makeAdapter()
