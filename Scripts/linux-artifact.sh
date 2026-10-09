@@ -374,7 +374,7 @@ smoke_artifact() {
     swift_link_flags+=("-Xlinker" "$flag")
   done
 
-  env PATH="$consumer_path" clang "$root/Tests/ArtifactSmoke/main-linux.c" \
+  env PATH="$consumer_path" clang "$root/Tests/ArtifactSmoke/main.c" \
     -I "$verified_variant/include" "$verified_library" "${link_flags[@]}" \
     -o "$build_root/c-smoke"
   env PATH="$consumer_path" "$build_root/c-smoke"
