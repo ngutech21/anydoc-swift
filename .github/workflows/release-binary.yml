@@ -113,7 +113,7 @@ jobs:
           printf '%s  %s\n' "$checksum" "$ASSET_NAME" > "$ARCHIVE_PATH.sha256"
 
       - name: Preserve verified artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-macos-arm64
           path: |
@@ -188,7 +188,7 @@ jobs:
             '
 
       - name: Preserve verified artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-${{ matrix.target }}
           path: |
