@@ -15,7 +15,7 @@ surface the conflict instead of guessing or silently weakening a requirement.
 Development and native artifact verification require either Apple Silicon with
 macOS 13 or later, or a native `x86_64`/`aarch64` GNU/Linux host. The iOS
 gate runs on Apple Silicon and requires an installed iOS Simulator runtime
-supporting the iPhone 16e device type. Install:
+with a supported iPhone device type. Install:
 
 - Swift 6.2 or later and, on macOS, the Xcode command-line tools;
 - the toolchain pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
@@ -184,10 +184,11 @@ Tests are organized around the seams they protect:
   preserves its signature and resources, and places the bridge in its named
   framework product rather than a shared `include/module.modulemap` output.
   A public Swift consumer is final-linked for a physical arm64 iOS device.
-- The complete Swift test target runs on a temporary arm64 iPhone 16e simulator
-  with the newest available installed iOS runtime. The recipe creates, boots,
-  and deletes only that device; no usable runtime is a hard failure. Fixtures
-  are SwiftPM resources loaded through `Bundle.module`.
+- The complete Swift test target runs on a temporary arm64 iPhone simulator
+  with the newest available installed iOS runtime and its first supported
+  iPhone model. The recipe logs the selected pair, creates, boots, and deletes
+  only that device; no usable runtime or iPhone model is a hard failure.
+  Fixtures are SwiftPM resources loaded through `Bundle.module`.
 - A generated public symbol graph proves that no C/Rust bridge declaration is
   exported by the Swift module.
 - The non-default binary-release qualification builds a public consumer in

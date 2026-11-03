@@ -7,7 +7,6 @@ bridge_mode="${ANYDOC_SWIFT_BRIDGE_MODE:-local}"
 derived_data="$root/.build/xcode-ios-simulator-tests-$bridge_mode"
 result_bundle="$derived_data/TestResults.xcresult"
 framework_name="AnyDocSwiftBridge"
-device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
 tool_path="/usr/bin:/bin:/usr/sbin:/sbin"
 udid=""
 bridge_environment=()
@@ -32,9 +31,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-runtime="$({
+runtime_info="$({
   xcrun simctl list runtimes available -j
-} | jq -er '
+} | jq -ec '
   [
     .runtimes[]
     | select(.isAvailable == true)
@@ -42,14 +41,16 @@ runtime="$({
   ]
   | sort_by(.version | split(".") | map(tonumber))
   | last
-  | .identifier
 ')"
+runtime="$(jq -er '.identifier' <<<"$runtime_info")"
+device_type="$(jq -er 'first(.supportedDeviceTypes[] | select(.productFamily == "iPhone")).identifier' <<<"$runtime_info")"
 
 xcrun simctl list devicetypes -j | jq -e \
   --arg identifier "$device_type" \
   'any(.devicetypes[]; .identifier == $identifier)' >/dev/null
 
 device_name="AnyDocSwift-iOS-CI-$$"
+printf 'Using simulator device type %s with runtime %s\n' "$device_type" "$runtime"
 udid="$(xcrun simctl create "$device_name" "$device_type" "$runtime")"
 test -n "$udid"
 xcrun simctl boot "$udid"
