@@ -44,7 +44,7 @@ unimplemented = "deny"
 [dependencies]
 anydoc = "=0.2.4"
 # The reviewed iOS privacy patch requires this exact version.
-pdf-inspector = "=1.24.0"
+pdf-inspector = "=1.25.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
