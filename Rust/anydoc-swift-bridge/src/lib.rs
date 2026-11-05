@@ -8,6 +8,9 @@
 mod engine;
 mod transport;
 
+// Constrain anydoc to the dependency version reviewed for the iOS privacy patch.
+use pdf_inspector as _;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::{ptr, slice, str};
 

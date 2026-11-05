@@ -266,7 +266,7 @@ once_cell 1.21.4
 Source: https://github.com/matklad/once_cell
 Declared license: MIT OR Apache-2.0
 
-pdf-inspector 1.25.2
+pdf-inspector 1.24.0
 Source: https://github.com/firecrawl/pdf-inspector
 Declared license: MIT AND BSD-3-Clause
 
@@ -727,7 +727,7 @@ limitations under the License.
 ===============================================================================
 BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License (BSD-3-Clause)
 Used by:
-- pdf-inspector 1.25.2
+- pdf-inspector 1.24.0
 
 %%Copyright: -----------------------------------------------------------
 %%Copyright: Copyright 1990-2009 Adobe Systems Incorporated.
@@ -2234,7 +2234,7 @@ SOFTWARE.
 ===============================================================================
 MIT License (MIT)
 Used by:
-- pdf-inspector 1.25.2
+- pdf-inspector 1.24.0
 
 MIT License
 

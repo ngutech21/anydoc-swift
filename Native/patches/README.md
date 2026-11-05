@@ -24,6 +24,8 @@ records the archive, patch, and source checksums. Unchanged staging is reused;
 modified staging is reconstructed from the verified archive.
 
 The patch and preparation script are part of the reviewed native build inputs.
+The bridge manifest pins this version so dependency updates cannot bypass the
+reviewed patch.
 The registry lockfile alone does not describe the patched iOS source. Keep the
 archive/version and source checksums synchronized when intentionally upgrading
 or removing this patch. Existing upstream license files remain unchanged.
