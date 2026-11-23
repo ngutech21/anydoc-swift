@@ -42,7 +42,7 @@ undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 
 [dependencies]
-anydoc = "=0.2.4"
+anydoc = "=0.2.5"
 # The reviewed iOS privacy patch requires this exact version.
 pdf-inspector = "=1.24.0"
 serde = { version = "1", features = ["derive"] }
